@@ -76,6 +76,18 @@ class CliTests(unittest.TestCase):
         self.assertEqual("UNAUTHORIZED", result["error"]["code"])
         self.assertFalse(self.broker.calls)
 
+    def test_root_deployment_probe_is_exact_and_does_not_grant_business_authority(self):
+        self.broker.deployment_proof = {'pid': 123, 'protocol_ready': True}
+        with patch.object(SyntheticPeerConnection, 'getsockopt', return_value=struct.pack('3i', 10, 0, 0)):
+            for action in ('deployment_observe', 'deployment_status'):
+                result = self.handle(json.dumps({'action': action}).encode(), {})
+                self.assertEqual(self.broker.deployment_proof, result['result'])
+            for request in ({'action': 'deployment_observe', 'principal_id': 'synthetic'},
+                            {'tool': 'lh_job_submit', 'arguments': {}}):
+                result = self.handle(json.dumps(request).encode(), {})
+                self.assertEqual('UNAUTHORIZED', result['error']['code'])
+        self.assertEqual([], self.broker.calls)
+
     def test_raw_duplicate_keys_rejected_before_broker(self):
         raw = b'{"tool":"first","tool":"second","arguments":{}}'
         self.assertEqual("INVALID_REQUEST", self.handle(raw)["error"]["code"])

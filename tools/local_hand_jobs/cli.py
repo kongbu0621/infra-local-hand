@@ -332,10 +332,24 @@ class MaintenanceServer:
             _deadline(connection, deadline)
             credentials = connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
             _, uid, _ = struct.unpack("3i", credentials)
+            # A root deployment observer may inspect this process's actual
+            # loaded proof. This exact request grants no task authority.
+            if uid == 0:
+                raw_request = _read_frame(connection, MAX_REQUEST_BYTES, deadline=deadline)
+                request = strict_loads(raw_request)
+                if request in ({"action": "deployment_status"}, {"action": "deployment_observe"}):
+                    proof = getattr(self.broker, "deployment_proof", None)
+                    if not isinstance(proof, dict):
+                        raise JobError("UNSUPPORTED", "This listener has no guarded deployment proof")
+                    _send_frame(connection, {"result": dict(proof)}, deadline=deadline)
+                    return
+            else:
+                raw_request = None
             principal = self.peer_map.get(uid)
             if not isinstance(principal, Principal):
                 raise JobError("UNAUTHORIZED", "OS peer has no admitted principal")
-            request = strict_loads(_read_frame(connection, MAX_REQUEST_BYTES, deadline=deadline))
+            request = strict_loads(raw_request if raw_request is not None else
+                                   _read_frame(connection, MAX_REQUEST_BYTES, deadline=deadline))
             if type(request) is dict:
                 request, principal = forwarded_bounds.restrict(request, principal)
             if type(request) is not dict or set(request) != {"tool", "arguments"} or not isinstance(request["tool"], str):

@@ -1,0 +1,600 @@
+"""Concrete local adapters and protected observations for deployment.
+
+The runtime never saves coordinator records. Every effective operation follows
+the caller's durable intent; returned JSON is the caller's recovery evidence.
+"""
+from __future__ import annotations
+
+import copy
+import hashlib
+import os
+from pathlib import Path
+import socket
+import stat
+import struct
+import time
+from types import SimpleNamespace
+
+from local_hand_jobs import cli, maintenance, startup
+
+from . import files
+from .gateway import GatewayAdapter
+from .model import DeployError, PLAN_SCHEMA, canonical, decode, digest, seal_plan
+from .planner import PHASES, validate_profile
+from .services import SystemdAdapter, tree_snapshot
+from .supervision import SupervisedRunner
+
+
+def _clone(value):
+    return decode(canonical(value))
+
+
+class PlanningEnvironment:
+    """Constructing this observer never creates a directory or child process."""
+    def __init__(self, profile):
+        self.profile = profile
+        self.owner = profile.get("owner_uid", 0)
+        self.runner = SimpleNamespace(timeout=profile.get("timeout_seconds", 30))
+        self._services = self._gateway = None
+
+    def _probe(self, component, *, reconcile=False):
+        spec = self.profile["probes"][component]
+        path = Path(spec["socket"])
+        for parent in path.parents:
+            info = parent.lstat()
+            if (not stat.S_ISDIR(info.st_mode) or info.st_uid not in {0, self.owner}
+                    or info.st_mode & 0o022 and not (info.st_uid == 0 and info.st_mode & stat.S_ISVTX)):
+                raise DeployError("UNTRUSTED_PROBE", "Status socket ancestor is not protected")
+        info = path.lstat()
+        if not stat.S_ISSOCK(info.st_mode) or info.st_uid != spec.get("peer_uid", 0):
+            raise DeployError("UNTRUSTED_PROBE", "Status socket is not its fixed local peer")
+        end = time.monotonic() + min(self.profile.get("timeout_seconds", 30), 10)
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+            connection.settimeout(max(0.01, end - time.monotonic()))
+            connection.connect(str(path))
+            pid, uid, _ = struct.unpack("3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+            if uid != spec.get("peer_uid", 0):
+                raise DeployError("UNTRUSTED_PROBE", "Status peer identity changed")
+            request = {"action": "deployment_status" if reconcile else "deployment_observe"}
+            if os.geteuid() != 0 and spec["kind"] == "resident":
+                request["principal_id"] = spec["principal_id"]
+            cli._send_frame(connection, request, deadline=end, limit=4096)
+            response = decode(cli._read_frame(connection, 65536, deadline=end))
+        if not isinstance(response, dict) or "error" in response or not isinstance(response.get("result"), dict):
+            raise DeployError("PROBE_FAILED", "Protected status did not return a valid observation")
+        result = response["result"]
+        direct = spec["kind"] == "mcp" and result.get("component") == component
+        loaded = result if direct else result.get("loaded")
+        if ((not direct and result.get("maintenance_supported") is not True) or not isinstance(loaded, dict)
+                or loaded.get("pid") != pid or loaded.get("protocol_ready") is not True
+                or loaded.get("boot_id") != startup.boot_id()):
+            raise DeployError("UNGUARDED_ENTRY", "Actual listener did not prove its loaded guarded configuration")
+        # Bind the successful socket response to this live process instance.
+        raw = Path(f"/proc/{pid}/stat").read_text()
+        if str(loaded.get("start_ticks")) != raw[raw.rindex(")") + 2:].split()[19]:
+            raise DeployError("PROBE_INSTANCE_CHANGED", "Status process instance changed")
+        return {"maintenance_supported": True, "loaded": loaded} if direct else result
+
+    def _loaded(self, unit):
+        component = self.profile["systemd"]["units"][unit]["component"]
+        value = self._probe(component)["loaded"]
+        return {**value, "config_digest": value["configuration_digest"]}
+
+    @property
+    def services(self):
+        if self._services is None:
+            profile = self.profile.get("systemd")
+            if not profile:
+                raise DeployError("UNSUPPORTED_PROFILE", "No fixed service profile")
+            self._services = SystemdAdapter(profile, self.runner, loaded_probe=self._loaded,
+                                             guard_check=getattr(self, "_guard", None))
+        return self._services
+
+    @property
+    def gateway(self):
+        if self._gateway is None:
+            profile = self.profile.get("gateway")
+            if not profile:
+                raise DeployError("UNSUPPORTED_PROFILE", "No fixed gateway profile")
+            self._gateway = GatewayAdapter(profile, self.runner,
+                guard_check=getattr(self, "_guard", None), route_probe=self._route)
+        return self._gateway
+
+    def _route(self, container_id):
+        component = self.profile["gateway"]["component"]
+        value = self._probe(component)["loaded"]
+        if value.get("container_id") != container_id:
+            raise DeployError("GATEWAY_INSTANCE_CHANGED", "Gateway status is not bound to the selected container")
+        return {**value, "config_digest": value["configuration_digest"]}
+
+    def _verify_components(self, selection, candidates=None):
+        candidates = candidates or {}
+        members = {item["path"]: item["sha256"] for item in selection["members"]}
+        total = 0
+        for path, expected in members.items():
+            actual_path = candidates.get(path, path)
+            raw = startup.protected_read(actual_path, owner_uid=self.owner, maximum=4 * 1024 * 1024)
+            total += len(raw)
+            if total > 64 * 1024 * 1024 or hashlib.sha256(raw).hexdigest() != expected:
+                raise DeployError("CONFIGURATION_CHANGED", "Complete configuration member differs from selection")
+        for component, guard in self.profile["guarded_components"].items():
+            path = guard["configuration"]
+            if path not in members:
+                raise DeployError("UNGUARDED_ENTRY", "Guard configuration is outside the complete selection")
+            config = decode(startup.protected_read(candidates.get(path, path), owner_uid=self.owner))
+            expected = selection["components"][component]
+            if config.get("schema") == "local-hand-mcp-startup/v1":
+                inputs = config.get("inputs")
+                if (not isinstance(inputs, dict) or not {"config", "auth_config"} <= set(inputs)
+                        or set(inputs) - {"config", "auth_config", "resident", "prepared_task"}
+                        or config.get("mode") not in {"resident", "prepared_task", "read_only"}
+                        or set(inputs) != ({"config", "auth_config"} if config.get("mode") == "read_only"
+                                           else {"config", "auth_config", config.get("mode")})
+                        or type(config.get("port")) is not int or not 1 <= config["port"] <= 65535):
+                    raise DeployError("UNGUARDED_ENTRY", "MCP startup configuration is incomplete")
+                bindings = {}
+                for name, input_path in inputs.items():
+                    if input_path not in members:
+                        raise DeployError("UNGUARDED_ENTRY", "MCP input is outside the complete selection")
+                    raw = startup.protected_read(candidates.get(input_path, input_path), owner_uid=self.owner)
+                    bindings[name] = {"path": input_path, "sha256": hashlib.sha256(raw).hexdigest()}
+                config_digest = startup.digest({"inputs": bindings, "mode": config["mode"], "port": config["port"]})
+                manager_sockets = {probe["socket"] for probe in self.profile["probes"].values()
+                                   if probe["kind"] in {"resident", "prepared"}}
+                if (config.get("node_id") != selection["node_id"] or config.get("deployment_digest") != selection["deployment_digest"]
+                        or config.get("payload_digest") != expected["payload_digest"]
+                        or config_digest != expected["configuration_digest"] or config.get("manager_socket") not in manager_sockets):
+                    raise DeployError("UNGUARDED_ENTRY", "MCP actual inputs do not match its guarded startup selection")
+                continue
+            bound = config.get("maintenance", {})
+            if (bound.get("schema") != maintenance.CONFIG_SCHEMA or bound.get("node_id") != selection["node_id"]
+                    or bound.get("deployment_digest") != selection["deployment_digest"]
+                    or bound.get("directory") != self.profile["maintenance_directory"]
+                    or bound.get("startup_descriptor") != self.profile["startup_descriptor"]
+                    or maintenance.digest({k: v for k, v in config.items() if k != "maintenance"}) != expected["configuration_digest"]
+                    or config.get("installation", {}).get("installed", {}).get("payload_digest") != expected["payload_digest"]):
+                raise DeployError("UNGUARDED_ENTRY", "Actual configuration does not bind all selected maintenance/startup guards")
+
+    def validate_baseline(self, node_id, source, target, file_plan):
+        current = startup.read_selection(self.profile["startup_descriptor"], owner_uid=self.owner)
+        if current != source["selection"] or current["node_id"] != node_id:
+            raise DeployError("BASELINE_CHANGED", "Stable startup selection changed before planning")
+        self._verify_components(source["selection"])
+        candidates = {entry["target"]: entry["source"]["path"] for entry in file_plan["files"] if entry["source"] is not None}
+        target_members = {member["path"] for member in target["selection"]["members"]}
+        if any(entry["source"] is None and entry["target"] in target_members for entry in file_plan["files"]):
+            raise DeployError("INVALID_PLAN", "A removed target cannot remain in the complete startup selection")
+        self._verify_components(target["selection"], candidates)
+        for component, desired in source["selection"]["components"].items():
+            if desired["running"]:
+                self._match_loaded(self._probe(component)["loaded"], source["selection"], component)
+
+    @staticmethod
+    def _match_loaded(loaded, selection, component):
+        desired = selection["components"][component]
+        if (loaded.get("node_id") != selection["node_id"]
+                or loaded.get("deployment_digest") != selection["deployment_digest"]
+                or any(loaded.get(key) != desired[key] for key in ("configuration_digest", "payload_digest"))):
+            raise DeployError("LOADED_CONFIGURATION_MISMATCH", "Process did not load the selected deployment")
+
+    def plan_services(self, source, target, file_plan):
+        if set(source["services"]) != set(self.profile["systemd"]["units"]):
+            raise DeployError("UNSUPPORTED_PROFILE", "All fixed services require explicit original and target states")
+        baseline = self.services.observe()
+        for unit, expected in source["services"].items():
+            actual = baseline["units"][unit]
+            if (actual["active"] not in {"active", "inactive", "failed"}
+                    or (actual["active"] == "active") != expected["running"] or actual["policy"] != expected["policy"]
+                    or expected.get("definition_digest", actual["definition_digest"]) != actual["definition_digest"]):
+                raise DeployError("BASELINE_CHANGED", "Actual service state differs from the declared source")
+        actions = self.services.plan(target["services"], baseline)
+        before = self.profile["systemd"]["reload_scope"]["loaded_snapshot"]
+        after = copy.deepcopy(before)
+        roots = [Path(path) for path in self.profile["systemd"]["reload_scope"]["roots"]]
+        def overlay(path, value):
+            parsed = Path(path)
+            included = parsed in roots or any(root in parsed.parents and before.get(str(root), {}).get("kind") == "directory" for root in roots)
+            if not included:
+                return False
+            if value["kind"] == "absent" and parsed not in roots:
+                after.pop(path, None)
+            else:
+                after[path] = value
+            return True
+        for entry in file_plan["files"]:
+            overlay(entry["target"], {"kind": "absent"} if entry["source"] is None else
+                    {"kind": "file", "digest": entry["source"]["snapshot"]["sha256"], **entry["attributes"]})
+        for action in actions:
+            if action["kind"] == "service_policy_link":
+                parent = Path(action["path"]).parent.stat()
+                value = {**action["after"], **({"mode": 0o777, "uid": self.owner,
+                    "gid": parent.st_gid if parent.st_mode & stat.S_ISGID else os.getegid()}
+                    if action["after"]["kind"] == "link" else {})}
+                if not overlay(action["path"], value):
+                    raise DeployError("RELOAD_SCOPE_CHANGED", "Enable link is outside the fixed manager tree")
+        if before != after:
+            actions.append(self.services.plan_reload(after))
+        return actions
+
+    def plan_gateway(self, source, target):
+        before = self.gateway.observe()
+        expected = source["gateway"]
+        if ((before["kind"] == "container") != expected.get("present", True)
+                or (before.get("status") == "running") != expected["running"]):
+            raise DeployError("BASELINE_CHANGED", "Actual gateway state differs from the declared source")
+        if before["kind"] == "container":
+            before.update(config_digest=expected["config_digest"], deployment_digest=expected["deployment_digest"])
+        return self.gateway.plan(target["gateway"], before)
+
+
+class ConcreteEnvironment(PlanningEnvironment):
+    def __init__(self, plan, store, gate):
+        super().__init__(plan["profile"])
+        self.plan, self.store, self.gate = plan, store, gate
+        self._runner = None
+
+    def for_operation(self, op):
+        return ConcreteEnvironment(op["plan"], self.store, self.gate)
+
+    def _mutating_adapters(self, *, readonly=False):
+        if self._runner is None:
+            self._runner = SupervisedRunner(self.store.root / "supervision",
+                timeout=self.profile.get("timeout_seconds", 30), output_limit=self.profile.get("output_limit", 65536),
+                create=not readonly)
+            self.runner = self._runner
+            if self._services is not None:
+                self._services.runner = self.runner
+            if self._gateway is not None:
+                self._gateway.runner = self.runner
+        elif not readonly:
+            # The runner creates only its private fixed journal directory here.
+            self._runner.ensure_directory()
+
+    def _directory(self, op, step_id, suffix):
+        path = self.store.root
+        for part in ("operations", op["id"], step_id, suffix):
+            path = path / part
+            try:
+                path.mkdir(mode=0o700)
+            except FileExistsError:
+                pass
+            info = path.lstat()
+            if not stat.S_ISDIR(info.st_mode) or info.st_uid != self.owner or stat.S_IMODE(info.st_mode) != 0o700:
+                raise DeployError("UNPROTECTED_STATE", "File preparation directory is not private")
+            fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        return path
+
+    def preflight(self, op):
+        plan = op["plan"]
+        validate_profile(plan["profile"], plan["source"], plan["target"])
+        file_plan = {"files": [step["action"] for step in plan["steps"] if step["kind"] == "file"]}
+        self.validate_baseline(plan["node_id"], plan["source"], plan["target"], file_plan)
+        state = self.gate.snapshot()
+        if state["node_id"] != plan["node_id"] or state["deployment_digest"] != plan["source"]["deployment_digest"]:
+            raise DeployError("BASELINE_CHANGED", "Maintenance marker does not select the planned source")
+        return {"passed": True, "selection_digest": startup.digest(plan["source"]["selection"]), "gate_sequence": state["sequence"]}
+
+    def prepare(self, step, op, record):
+        if step["kind"] == "file":
+            return files.prepare_file(step["action"], self._directory(op, step["id"], "publish"),
+                operation_id=op["id"], attempt_id="prepare-" + step["id"], lock_fd=self.store.lock_fd)
+        adapter = self.services if step["kind"] == "service" else self.gateway
+        adapter._validate_action(step["action"])
+        if step["action"].get("kind") == "service_daemon_reload":
+            prepared_files = [entry["prepared"] for entry in op["steps"]
+                              if entry["prepared"] and entry["prepared"].get("schema") == "lh-deploy-file-action-v1"]
+            _, retained, objects = self._retention(prepared_files)
+            action = _clone(step["action"])
+            for side in ("before", "after"):
+                action[side].update(retained)
+            action["retained_files"] = objects
+            return action
+        return _clone(step["action"])
+
+    def _retention(self, prepared_files):
+        """Declare exact inert staging objects in the shared reload tree.
+
+        Nothing is filtered from that tree. Failed preparation objects remain
+        visible, handle-bound and byte-for-byte checked, while the current
+        candidate's path disappears when its separately recorded rename runs.
+        """
+        if not self.profile.get("systemd"):
+            return {}, {}, []
+        roots = [Path(path) for path in self.profile["systemd"]["reload_scope"]["roots"]]
+        consumed = {item["staged"]["path"] for item in prepared_files if item.get("staged")}
+        objects = {}
+        for action in prepared_files:
+            for item in files.preparation_objects(action):
+                path = Path(item["path"])
+                if path in roots or any(root in path.parents for root in roots):
+                    previous = objects.get(item["path"])
+                    if previous and previous != item:
+                        raise DeployError("RESTORE_CONFLICT", "Retained staging identity changed")
+                    objects[item["path"]] = item
+        current = {path: {"kind": "file", "digest": item["snapshot"]["sha256"],
+                          **{key: item["snapshot"][key] for key in ("mode", "uid", "gid")}}
+                   for path, item in objects.items()}
+        retained = {path: value for path, value in current.items() if path not in consumed}
+        return current, retained, [objects[path] for path in sorted(retained)]
+
+    def _verify_retention(self, prepared):
+        if prepared.get("retained_files"):
+            files.verify_preparation_objects(prepared["retained_files"], owner_uid=self.owner,
+                limits=files.FileLimits(**self.profile.get("file_limits", {})))
+
+    @staticmethod
+    def effect_key(step):
+        action = step["action"]
+        if step["kind"] == "file":
+            return "file:" + action["target"]
+        if step["kind"] == "gateway":
+            return "gateway:" + action["target"]
+        if action["kind"] == "service_policy_link":
+            return "policy:" + action["path"]
+        return "reload:manager" if action["kind"] == "service_daemon_reload" else "service:" + action["target"]
+
+    @staticmethod
+    def _previous(attempt):
+        return None if not attempt else attempt.get("binding")
+
+    @staticmethod
+    def _observation(value, prepared, *, is_file=False):
+        result = {**value, "state": value.get("state", value.get("outcome")), "closed": value.get("closed", is_file)}
+        if is_file:
+            result["effective"] = result["state"] == "target" and prepared["action"] != "noop"
+        else:
+            result["effective"] = result["state"] in {"target", "partial"} and prepared.get("before") != value.get("observation")
+        return result
+
+    def observe(self, step, prepared, attempt=None):
+        if step["kind"] == "file":
+            return self._observation(files.observe_file(prepared), prepared, is_file=True)
+        self._mutating_adapters(readonly=True)
+        self._verify_retention(prepared)
+        adapter = self.services if step["kind"] == "service" else self.gateway
+        return self._observation(adapter.observe_action(prepared, self._previous(attempt), lock_fd=self.store.lock_fd), prepared)
+
+    def execute(self, step, prepared, op, attempt_id, persist_intent, previous=None):
+        if step["kind"] == "file":
+            return self._observation(files.execute_file(prepared, lock_fd=self.store.lock_fd), prepared, is_file=True)
+        self._mutating_adapters()
+        self._verify_retention(prepared)
+        adapter = self.services if step["kind"] == "service" else self.gateway
+        return self._observation(adapter.execute(prepared, attempt_id=attempt_id, lock_fd=self.store.lock_fd,
+            persist_intent=persist_intent, previous=self._previous(previous)), prepared)
+
+    def _origins(self, op):
+        return [self.store.get(value) for value in op.get("inherited", [])] + [op]
+
+    def _source(self, op):
+        return self._origins(op)[0]["plan"]["source"]
+
+    def prepare_restore(self, step, op, record):
+        if step["kind"] != "file":
+            raise DeployError("COMPENSATION_ORDER", "Service and gateway restoration require the aggregate compensation plan")
+        return files.prepare_restore(record["prepared"], self._directory(op, step["id"], "restore"),
+            operation_id=op["id"], attempt_id="restore-" + step["id"], lock_fd=self.store.lock_fd)
+
+    def prepare_compensation(self, op):
+        origins = self._origins(op)
+        selected, service_actions, gateway_actions = {}, [], []
+        for origin in origins:
+            for step, record in zip(origin["plan"]["steps"], origin["steps"]):
+                if record["prepared"] is None:
+                    continue
+                # A reboot can load published definitions before the planned
+                # explicit reload is attempted. Their original manager tree
+                # remains a required restoration target in either case.
+                if step["kind"] == "service" and step["action"].get("kind") == "service_daemon_reload":
+                    service_actions.append(record["prepared"])
+                    continue
+                if not record["effective"]:
+                    continue
+                if step["kind"] == "file":
+                    selected.setdefault(step["action"]["target"], []).append((step, record))
+                elif step["kind"] == "service":
+                    service_actions.append(record["prepared"])
+                else:
+                    gateway_actions.append(record["prepared"])
+            for entry in origin.get("compensation", []):
+                step, record = entry["step"], entry["record"]
+                if not (record["effective"] or record["restore_attempts"] or record["state"] == "RESTORED"):
+                    continue
+                if step["kind"] == "file":
+                    prepared = record["restore"]
+                    selected.setdefault(step["action"]["target"], []).append((step, {
+                        **record, "prepared": prepared, "attempts": record["restore_attempts"]}))
+                elif step["kind"] == "service":
+                    service_actions.append(record["restore"])
+        # All file conflicts are checked before even staging a compensation.
+        merged = []
+        for chain in selected.values():
+            first_step, first_record = chain[0]
+            step, record = chain[-1]
+            observed = self.observe(step, record["prepared"], record["attempts"][-1] if record["attempts"] else None)
+            if observed["state"] not in {"original", "target"} or not observed["closed"]:
+                raise DeployError("RESTORE_CONFLICT", "A retained file cannot be safely compensated")
+            published = _clone(record["prepared"])
+            original = first_record["prepared"]
+            reservations = {}
+            for _, item in chain:
+                for key, value in item["prepared"]["preparation_reservations"].items():
+                    if key in reservations and reservations[key] != value:
+                        raise DeployError("RESTORE_CONFLICT", "Inherited preparation reservation changed")
+                    reservations[key] = value
+            published.update(
+                retained_state_dirs=list(dict.fromkeys(path for _, item in chain for path in item["prepared"]["retained_state_dirs"])),
+                retained_namespaces=list(dict.fromkeys(prefix for _, item in chain for prefix in item["prepared"]["retained_namespaces"])),
+                preparation_reservations=reservations, preparation_budget_bytes=sum(reservations.values()))
+            merged.append((first_step, published, original))
+        result = []
+        for number, (step, published, original) in enumerate(merged):
+            restore_step = {"id": f"restore-file-{number:03d}", "kind": "file", "action": {**step["action"], "phase": "files"}}
+            prepared = files.prepare_restore(published, self._directory(op, restore_step["id"], "restore"),
+                operation_id=op["id"], attempt_id=restore_step["id"], lock_fd=self.store.lock_fd, baseline=original)
+            result.append({"step": restore_step, "prepared": prepared})
+        current, retained, objects = self._retention([entry["prepared"] for entry in result])
+        for kind, actions, adapter in (("service", service_actions, self.services if service_actions else None),
+                                       ("gateway", gateway_actions, self.gateway if gateway_actions else None)):
+            if actions:
+                kwargs = {"retained_tree": current, "retained_target": retained} if kind == "service" else {}
+                for action in adapter.plan_restore(actions, **kwargs):
+                    if action["kind"] == "service_daemon_reload":
+                        action["retained_files"] = objects
+                    result.append({"step": {"id": "pending", "kind": kind, "action": action}, "prepared": _clone(action)})
+        result.sort(key=lambda item: PHASES[item["step"]["action"]["phase"]])
+        for number, item in enumerate(result):
+            item["step"]["id"] = f"compensate-{number:03d}"
+        return result
+
+    def drain(self, op):
+        marker = self.gate.snapshot()
+        if marker["state"] != "CLOSED" or marker["owner"] != op["id"]:
+            raise DeployError("MAINTENANCE_CONFLICT", "Drain requires the operation's durable maintenance ownership")
+        active = [value for value in marker["responsibilities"].values() if value["state"] != "CLOSED"]
+        if not active:
+            # Once CLOSED, no new responsibility can be accepted. This durable
+            # empty set remains sufficient after our own manager stop/reboot;
+            # asking its now-stopped socket would deadlock normal recovery.
+            return {"quiescent": True, "accepted_responsibilities": 0, "gate_sequence": marker["sequence"]}
+        observations = {}
+        for component, guard in self.profile["guarded_components"].items():
+            if "prepare" in guard["entrypoints"] or "execute" in guard["entrypoints"]:
+                observations[component] = self._probe(component, reconcile=True)
+        active = self.gate.active()
+        return {"quiescent": not active, "accepted_responsibilities": len(active), "observations": observations}
+
+    def _current_selection(self):
+        return startup.read_selection(self.profile["startup_descriptor"], owner_uid=self.owner)
+
+    def _publish_selection(self, op, desired):
+        current = self._current_selection()
+        self._verify_selection_owner(op, current, desired)
+        value = startup.publish(self.profile["startup_descriptor"], desired, self.gate,
+                                expected_digest=startup.digest(current), owner_uid=self.owner,
+                                maintenance_owner=op["id"])
+        return {"digest": value, "selection": desired}
+
+    def _verify_selection_owner(self, op, current, desired=None):
+        source = self._source(op)["selection"]
+        saved = op["startup"].get("current")
+        saved_value = saved.get("selection") if isinstance(saved, dict) else None
+        ours = current.get("owner") == op["id"] and current.get("mode") in {"candidate", "blocked"}
+        predecessors = set(op.get("inherited", []))
+        inherited = current.get("owner") in predecessors and current.get("mode") in {"candidate", "blocked"}
+        if current not in (source, saved_value, desired) and not (ours or inherited):
+            raise DeployError("STARTUP_CONFLICT", "Startup selection changed outside this recovery chain")
+        if ours or inherited:
+            templates = [origin["plan"][side]["selection"] for origin in self._origins(op) for side in ("source", "target")]
+            if not any(all(current[key] == template[key] for key in ("node_id", "deployment_digest", "members", "components")) for template in templates):
+                raise DeployError("STARTUP_CONFLICT", "Owned descriptor has an unrelated configuration")
+
+    def block_startup(self, op):
+        current = self._current_selection()
+        desired = {**current, "mode": "blocked", "owner": op["id"], "decision_id": None, "permit": None}
+        return self._publish_selection(op, desired)
+
+    def candidate_startup(self, op, step, attempt_id):
+        if step["kind"] == "file" or step["action"].get("kind") not in {"service_start", "gateway_create", "gateway_start"}:
+            return {"changed": False}
+        selected = self._source(op) if op["direction"] == "ROLLBACK" else op["plan"]["target"]
+        current = self._current_selection()
+        permit = current.get("permit") or {}
+        claims = _clone(permit.get("claims", {})) if permit.get("boot_id") == startup.boot_id() else {}
+        component = (self.profile.get("systemd", {}).get("units", {}).get(step["action"].get("target"), {}).get("component")
+                     or self.profile.get("gateway", {}).get("component"))
+        claims.pop(component, None)
+        desired = {**_clone(selected["selection"]), "mode": "candidate", "owner": op["id"], "decision_id": None,
+                   "permit": {"boot_id": startup.boot_id(), "attempt_id": attempt_id, "claims": claims}}
+        return self._publish_selection(op, desired)
+
+    def _guard(self, target, wanted):
+        selection = self._current_selection()
+        component = (self.profile.get("systemd", {}).get("units", {}).get(target, {}).get("component")
+                     or self.profile.get("gateway", {}).get("component"))
+        desired = selection["components"].get(component)
+        if not desired:
+            raise DeployError("STARTUP_GUARD_REQUIRED", "Action has no selected guarded component")
+        startup.verify_members(selection, owner_uid=self.owner)
+        permit = selection.get("permit") or {}
+        return {"descriptor_digest": startup.digest(selection), "config_digest": desired["configuration_digest"],
+                "deployment_digest": selection["deployment_digest"], "mode": selection["mode"],
+                "target_running": desired["running"], "boot": permit.get("boot_id"), "attempt_id": permit.get("attempt_id")}
+
+    def check_local(self, op, rollback=False):
+        selected = self._source(op) if rollback else op["plan"]["target"]
+        self._verify_components(selected["selection"])
+        current = self._current_selection()
+        proofs = {}
+        for component, desired in selected["selection"]["components"].items():
+            if desired["running"]:
+                loaded = self._probe(component)["loaded"]
+                self._match_loaded(loaded, selected["selection"], component)
+                if current["mode"] == "candidate":
+                    claim = current["permit"]["claims"].get(component)
+                    if claim != {key: loaded.get(key) for key in ("pid", "start_ticks", "boot_id")}:
+                        raise DeployError("STARTUP_INSTANCE_MISMATCH", "Candidate listener did not claim this process instance")
+                proofs[component] = loaded
+        if selected.get("services"):
+            actual = self.services.observe()
+            if actual["jobs"]:
+                raise DeployError("SERVICE_JOB_PENDING", "Service manager still has selected jobs")
+            for unit, target in selected["services"].items():
+                value = actual["units"][unit]
+                if (value["active"] == "active") != target["running"] or value["policy"] != target["policy"]:
+                    raise DeployError("SERVICE_POSTCONDITION", "Selected service run/enable state differs")
+                if target["running"] and value["definition_digest"] != target["definition_digest"]:
+                    raise DeployError("SERVICE_POSTCONDITION", "Manager did not load the selected unit definition")
+                if not target["running"] and (value["active"] not in {"inactive", "failed"} or value["pid"] or value["job"][0]):
+                    raise DeployError("SERVICE_POSTCONDITION", "Selected stopped service still has activity")
+        if selected.get("gateway") is not None:
+            value, target = self.gateway.observe(), selected["gateway"]
+            if ((value["kind"] == "container") != target.get("present", True)
+                    or (value.get("status") == "running") != target["running"]):
+                raise DeployError("GATEWAY_POSTCONDITION", "Gateway run/presence state differs from selection")
+        return {"passed": True, "deployment_digest": selected["deployment_digest"], "loaded": proofs}
+
+    def publish_stable(self, op):
+        durable = self.store.get(op["id"])
+        if (op.get("decision") not in {"COMMITTED", "ROLLED_BACK", "ABORTED_NO_CHANGE"}
+                or not op.get("decision_id")
+                or durable["decision"] != op["decision"] or durable["decision_id"] != op["decision_id"]):
+            raise DeployError("DECISION_NOT_DURABLE", "Stable selection requires the saved matching decision")
+        selected = op["plan"]["target"] if op["decision"] == "COMMITTED" else self._source(op)
+        desired = {**_clone(selected["selection"]), "mode": "stable", "owner": None,
+                   "decision_id": op["decision_id"], "permit": None}
+        return self._publish_selection(op, desired)
+
+    def release_valid(self, op):
+        selected = op["plan"]["target"] if op["decision"] == "COMMITTED" else self._source(op)
+        current = self._current_selection()
+        desired = {**_clone(selected["selection"]), "mode": "stable", "owner": None,
+                   "decision_id": op["decision_id"], "permit": None}
+        self._verify_selection_owner(op, current, desired)
+        return self.check_local(op, rollback=op["decision"] != "COMMITTED")
+
+    def selected_deployment(self, op):
+        return op["plan"]["target"] if op["decision"] == "COMMITTED" else self._source(op)
+
+    def restored_plan(self, op, request_id):
+        # A rollback of a committed deployment is a new plan, never a rewrite of
+        # its historic decision. Build from retained originals after observation.
+        from .planner import MANIFEST_SCHEMA, build_plan
+        specs = []
+        for step, record in zip(op["plan"]["steps"], op["steps"]):
+            if step["kind"] != "file" or not record["effective"]:
+                continue
+            original = record["prepared"]["original"]
+            if not original.get("exists"):
+                specs.append({"target": step["action"]["target"], "remove": True})
+                continue
+            specs.append({"target": step["action"]["target"], "source": record["prepared"]["backup"]["path"],
+                          **{key: original[key] for key in ("mode", "uid", "gid")}})
+        source = _clone(op["plan"]["target"])
+        source["selection"] = self._current_selection()
+        return build_plan({"schema": MANIFEST_SCHEMA, "request_id": request_id, "node_id": op["plan"]["node_id"],
+                           "source": source, "target": self._source(op), "files": specs, "profile": self.profile}, self)

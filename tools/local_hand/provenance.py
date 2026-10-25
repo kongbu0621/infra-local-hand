@@ -59,7 +59,7 @@ def _projection_path(name: object) -> bool:
     if not isinstance(name, str):
         return False
     path = PurePosixPath(name)
-    module = re.fullmatch(r"tools/(?:admin/(?:local_hand_quota_observer|local_hand_system_manager)|"
+    module = re.fullmatch(r"tools/(?:admin/(?:local_hand_quota_observer|local_hand_system_manager|local_hand_deploy)|"
                           r"local_hand|local_hand_connect|local_hand_jobs|local_hand_mcp)/"
                           r"[a-z_][a-z0-9_]*\.py", name)
     return (not path.is_absolute() and ".." not in path.parts and path.as_posix() == name

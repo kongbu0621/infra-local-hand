@@ -1,0 +1,91 @@
+"""One private administrator entry for plan/apply/resume/rollback/status."""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+
+from local_hand_jobs.maintenance import MaintenanceGate
+from local_hand_jobs.startup import protected_read
+
+from .checks import check_public
+from .coordinator import Coordinator
+from .identity import implementation_identity
+from .model import DeployError, decode, validate_plan
+from .planner import build_plan
+from .report import admission_view, report
+from .runtime import ConcreteEnvironment
+from .store import Store
+
+
+def read_document(path):
+    return decode(protected_read(path, owner_uid=os.geteuid(), maximum=2 * 1024 * 1024))
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Resume fixed local deployment effects; never replay business tasks")
+    parser.add_argument("--state", help="Existing protected deployment state directory")
+    parser.add_argument("--node", help="Exact configured node identity")
+    commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("init-state", help="Explicit create-only initialization; does not open admission")
+    commands.add_parser("plan").add_argument("manifest")
+    commands.add_parser("apply").add_argument("plan")
+    commands.add_parser("status").add_argument("operation", nargs="?")
+    for name in ("resume", "rollback"):
+        commands.add_parser(name).add_argument("operation")
+    supersede = commands.add_parser("supersede")
+    supersede.add_argument("operation"); supersede.add_argument("plan")
+    commands.add_parser("check-public").add_argument("specification")
+    args = parser.parse_args(argv)
+    try:
+        implementation = (implementation_identity() if args.command in
+                          {"apply", "resume", "rollback", "supersede", "init-state"} else None)
+        if args.command == "plan":
+            result = build_plan(read_document(args.manifest))
+        elif args.command == "check-public":
+            result = check_public(read_document(args.specification))
+        else:
+            if not args.state or not args.node:
+                raise DeployError("INVALID_REQUEST", "This command requires --state and --node")
+            store = Store(args.state, args.node)
+            if args.command == "init-state":
+                store.initialize()
+                result = {"initialized": True, "admission": "UNCHANGED"}
+            elif args.command == "status":
+                operations = [store.get(args.operation)] if args.operation else store.list(unfinished=True)
+                result = []
+                for operation in operations:
+                    profile = operation["plan"]["profile"]
+                    gate = MaintenanceGate(profile["maintenance_directory"], args.node,
+                                           owner_uid=profile.get("owner_uid", 0))
+                    result.append(report(operation, admission=admission_view(gate)))
+            else:
+                if args.command == "apply":
+                    plan = validate_plan(read_document(args.plan))
+                else:
+                    plan = store.get(args.operation)["plan"]
+                if plan["node_id"] != args.node:
+                    raise DeployError("NODE_CONFLICT", "Plan belongs to a different node")
+                profile = plan["profile"]
+                gate = MaintenanceGate(profile["maintenance_directory"], args.node,
+                                       owner_uid=profile.get("owner_uid", 0))
+                coordinator = Coordinator(store, gate, ConcreteEnvironment(plan, store, gate), implementation=implementation)
+                if args.command == "apply":
+                    operation = coordinator.apply(plan)
+                elif args.command == "supersede":
+                    operation = coordinator.supersede(args.operation, validate_plan(read_document(args.plan)))
+                else:
+                    operation = getattr(coordinator, args.command)(args.operation)
+                result = report(operation, admission=admission_view(gate))
+        print(json.dumps(result, ensure_ascii=True, sort_keys=True, indent=2))
+        return 0 if not isinstance(result, dict) or not result.get("recovery", {}).get("waiting") else 3
+    except (OSError, RuntimeError, ValueError) as error:
+        # Private tools may record detailed raw errors separately. Never put
+        # source paths, URLs, credentials or command output in this public form.
+        print(json.dumps({"status": "NOT_COMPLETED", "error": getattr(error, "code", type(error).__name__)}), file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

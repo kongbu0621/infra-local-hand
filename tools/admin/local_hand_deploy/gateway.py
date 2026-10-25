@@ -1,0 +1,425 @@
+"""Fixed Compose single-service scope implemented through the local Engine API.
+
+Only an existing daemon, pinned image, external networks and bind mounts are
+accepted. Container create/start/stop/remove are separate resumable effects;
+there is no project up/down, dependency start, image pull, network/volume create,
+prune or orphan cleanup. This is the finite --no-deps equivalent adapter.
+"""
+from __future__ import annotations
+
+import http.client
+import json
+import os
+from pathlib import Path
+import re
+import socket
+import stat
+import urllib.parse
+
+from .services import validate_guard
+from .supervision import AdapterError, boot_id, digest, verify_lock
+
+
+class _UnixHTTP(http.client.HTTPConnection):
+    def __init__(self, path, timeout):
+        super().__init__("localhost", timeout=timeout)
+        self.socket_path = path
+
+    def connect(self):
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.settimeout(self.timeout)
+        self.sock.connect(self.socket_path)
+
+
+class DockerEngine:
+    def __init__(self, socket_path="/var/run/docker.sock", *, api_version="v1.45", timeout=15, maximum=1048576):
+        self.path, self.version, self.timeout, self.maximum = socket_path, api_version, timeout, maximum
+        if not re.fullmatch(r"v1\.[0-9]{2}", api_version):
+            raise AdapterError("DOCKER_API_VERSION")
+        if not Path(socket_path).is_absolute() or ".." in Path(socket_path).parts:
+            raise AdapterError("DOCKER_SOCKET_PATH")
+
+    def request(self, method, path, body=None, *, missing=False):
+        connection = _UnixHTTP(self.path, self.timeout)
+        try:
+            raw = None if body is None else json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
+            if raw is not None and len(raw) > self.maximum:
+                raise AdapterError("DOCKER_REQUEST_BOUND")
+            connection.request(method, "/" + self.version + path, raw,
+                               {"Content-Type": "application/json", "Connection": "close"})
+            response = connection.getresponse()
+            data = response.read(self.maximum + 1)
+            if len(data) > self.maximum:
+                raise AdapterError("DOCKER_REPLY_BOUND")
+            if response.status == 404 and missing:
+                return None
+            if not 200 <= response.status < 300:
+                raise AdapterError(f"DOCKER_HTTP_{response.status}")
+            return None if not data else json.loads(data)
+        finally:
+            connection.close()
+
+
+def _name(value):
+    if not isinstance(value, str) or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,95}", value):
+        raise AdapterError("GATEWAY_NAME")
+    return value
+
+
+def _quote(value):
+    return urllib.parse.quote(value, safe="")
+
+
+class GatewayAdapter:
+    def __init__(self, profile, runner, *, engine=None, guard_check=None, route_probe=None):
+        self.profile, self.runner = profile, runner
+        self.project = _name(profile["project"])
+        self.service = _name(profile["service"])
+        self.name = _name(profile["container_name"])
+        self.engine = engine or DockerEngine(profile.get("socket", "/var/run/docker.sock"),
+            api_version=profile.get("api_version", "v1.45"), timeout=min(runner.timeout / 2, 30))
+        self.guard_check, self.route_probe = guard_check, route_probe
+        self._validate_compose(profile["compose"])
+
+    def _validate_compose(self, compose):
+        if not isinstance(compose, dict) or set(compose) - {"name", "services", "networks", "volumes"}:
+            raise AdapterError("COMPOSE_SCOPE")
+        if compose.get("name", self.project) != self.project or self.service not in compose.get("services", {}):
+            raise AdapterError("COMPOSE_PROJECT_SERVICE")
+        service = compose["services"][self.service]
+        supported = {"image", "container_name", "entrypoint", "command", "environment", "volumes", "networks",
+                     "ports", "restart", "read_only", "user", "labels", "depends_on", "cap_drop", "security_opt"}
+        if set(service) - supported:
+            raise AdapterError("UNSUPPORTED_GATEWAY_SERVICE_FIELD")
+        if service.get("container_name", self.name) != self.name:
+            raise AdapterError("GATEWAY_CONTAINER_NAME")
+        if not re.fullmatch(r"(?:[^\s]+@)?sha256:[0-9a-f]{64}", service.get("image", "")):
+            raise AdapterError("PINNED_GATEWAY_IMAGE_REQUIRED")
+        if service.get("restart", "no") not in ("no", "unless-stopped", "always", "on-failure"):
+            raise AdapterError("GATEWAY_RESTART_POLICY")
+        for name in service.get("networks", {}):
+            network = compose.get("networks", {}).get(name)
+            if not isinstance(network, dict) or network.get("external") is not True or set(network) - {"external", "name"}:
+                raise AdapterError("EXTERNAL_NETWORK_REQUIRED")
+            if isinstance(service["networks"], dict) and service["networks"][name] not in ({}, None):
+                raise AdapterError("GATEWAY_NETWORK_OPTIONS_NOT_SUPPORTED")
+        for mount in service.get("volumes", []):
+            if (not isinstance(mount, dict) or set(mount) - {"type", "source", "target", "read_only", "bind"}
+                    or mount.get("type") != "bind" or not mount.get("read_only")):
+                raise AdapterError("READ_ONLY_BIND_REQUIRED")
+            for key in ("source", "target"):
+                if not Path(mount[key]).is_absolute() or ".." in Path(mount[key]).parts:
+                    raise AdapterError("GATEWAY_BIND_PATH")
+            if mount.get("bind", {}).get("create_host_path", False):
+                raise AdapterError("GATEWAY_MUST_NOT_CREATE_HOST_PATH")
+        if service.get("environment") and not isinstance(service["environment"], dict):
+            raise AdapterError("RESOLVED_ENVIRONMENT_REQUIRED")
+        for key in ("entrypoint", "command"):
+            if key in service and (not isinstance(service[key], list) or any(not isinstance(x, str) for x in service[key])):
+                raise AdapterError("RESOLVED_ARGV_REQUIRED")
+        for port in service.get("ports", []):
+            if not isinstance(port, dict) or set(port) - {"target", "published", "host_ip", "protocol", "mode"}:
+                raise AdapterError("RESOLVED_PORT_REQUIRED")
+            if port.get("protocol", "tcp") != "tcp" or port.get("mode", "ingress") not in ("ingress", "host"):
+                raise AdapterError("GATEWAY_PORT_PROTOCOL")
+            if not all(str(port.get(k, "")).isdigit() and 1 <= int(port[k]) <= 65535 for k in ("target", "published")):
+                raise AdapterError("GATEWAY_PORT_RANGE")
+        if any(key.startswith("com.docker.compose.") or key.startswith("local-hand.deploy.") for key in service.get("labels", {})):
+            raise AdapterError("RESERVED_GATEWAY_LABEL")
+        if any(value is None or not isinstance(value, (str, int, float, bool)) for value in service.get("environment", {}).values()):
+            raise AdapterError("UNRESOLVED_GATEWAY_ENVIRONMENT")
+
+    def prerequisites(self, *, starting=False):
+        info = self.engine.request("GET", "/info")
+        if info.get("ID") != self.profile.get("daemon_id"):
+            raise AdapterError("DOCKER_DAEMON_ID_MISMATCH")
+        source = self.profile["compose"]["services"][self.service]
+        image = self.engine.request("GET", "/images/" + _quote(source["image"]) + "/json")
+        if image.get("Config", {}).get("Volumes"):
+            raise AdapterError("GATEWAY_IMAGE_IMPLICIT_VOLUMES")
+        if image.get("Config", {}).get("OnBuild"):
+            raise AdapterError("GATEWAY_IMAGE_ONBUILD")
+        # Image entrypoint is part of the frozen image, and startup guarding must
+        # actually be installed there; a callback alone does not make it so.
+        networks = {}
+        for logical in source.get("networks", {}):
+            external = self.profile["compose"]["networks"][logical].get("name", logical)
+            observed = self.engine.request("GET", "/networks/" + _quote(external))
+            if observed.get("Id") != self.profile.get("network_ids", {}).get(external):
+                raise AdapterError("GATEWAY_EXTERNAL_NETWORK_CHANGED")
+            networks[external] = observed["Id"]
+        for mount in source.get("volumes", []):
+            value = Path(mount["source"]).lstat()
+            if not (stat.S_ISREG(value.st_mode) or stat.S_ISDIR(value.st_mode)):
+                raise AdapterError("GATEWAY_BIND_OBJECT")
+        for service in source.get("depends_on", {}):
+            dep_id = self.profile.get("dependency_container_ids", {}).get(service)
+            if not dep_id:
+                raise AdapterError("GATEWAY_DEPENDENCY_BINDING_REQUIRED")
+            if not starting:
+                continue
+            dep = self.engine.request("GET", "/containers/" + _quote(dep_id) + "/json")
+            if dep["Id"] != dep_id or not dep.get("State", {}).get("Running"):
+                raise AdapterError("GATEWAY_DEPENDENCY_NOT_READY")
+            health = dep.get("State", {}).get("Health", {}).get("Status")
+            if health not in (None, "healthy"):
+                raise AdapterError("GATEWAY_DEPENDENCY_NOT_HEALTHY")
+        return {"daemon_id": info["ID"], "image_id": image["Id"], "image_config": image.get("Config", {}), "networks": networks}
+
+    def _using(self, compose):
+        if compose == self.profile["compose"]:
+            return self
+        return GatewayAdapter({**self.profile, "compose": compose, "original_compose": self.profile["compose"]}, self.runner, engine=self.engine,
+                              guard_check=self.guard_check, route_probe=self.route_probe)
+
+    def _matches_spec(self, value, compose):
+        adapter = self._using(compose)
+        prerequisites = adapter.prerequisites()
+        source = compose["services"][self.service]
+        config, host = value.get("Config", {}), value.get("HostConfig", {})
+        image = prerequisites["image_config"]
+        if value.get("Image") != prerequisites["image_id"]:
+            return False
+        for source_key, field in (("entrypoint", "Entrypoint"), ("command", "Cmd"), ("user", "User")):
+            if config.get(field) != source.get(source_key, image.get(field)):
+                return False
+        def environment(items):
+            return dict(item.split("=", 1) for item in (items or []))
+        expected_env = {**environment(image.get("Env")), **{key: str(val) for key, val in source.get("environment", {}).items()}}
+        if environment(config.get("Env")) != expected_env:
+            return False
+        expected_body = adapter._create_body({"config_digest": "0" * 64, "deployment_digest": "0" * 64}, "observe")
+        for field in ("PortBindings", "ReadonlyRootfs", "CapDrop", "SecurityOpt"):
+            if (host.get(field) or ({} if field == "PortBindings" else [] if field in ("CapDrop", "SecurityOpt") else False)) != expected_body["HostConfig"][field]:
+                return False
+        if host.get("RestartPolicy", {}).get("Name", "no") != source.get("restart", "no"):
+            return False
+        actual_mounts = sorted((m.get("Type"), m.get("Source"), m.get("Destination"), not m.get("RW", True)) for m in value.get("Mounts", []))
+        expected_mounts = sorted(("bind", m["source"], m["target"], True) for m in source.get("volumes", []))
+        if actual_mounts != expected_mounts:
+            return False
+        actual_networks = value.get("NetworkSettings", {}).get("Networks", {})
+        if set(actual_networks) != set(prerequisites["networks"]) and not (not prerequisites["networks"] and set(actual_networks) == {"none"}):
+            return False
+        return all(actual_networks[name].get("NetworkID") == network_id for name, network_id in prerequisites["networks"].items())
+
+    def observe(self):
+        prerequisites = self.prerequisites()
+        value = self.engine.request("GET", "/containers/" + _quote(self.name) + "/json", missing=True)
+        if value is None:
+            return {"kind": "absent", "daemon_id": prerequisites["daemon_id"]}
+        labels = value.get("Config", {}).get("Labels", {}) or {}
+        if labels.get("com.docker.compose.project") != self.project or labels.get("com.docker.compose.service") != self.service:
+            raise AdapterError("FOREIGN_GATEWAY_CONTAINER")
+        matched_compose = None
+        for compose in (self.profile["compose"], self.profile.get("original_compose")):
+            if compose is not None and self._matches_spec(value, compose):
+                matched_compose = compose
+                break
+        if matched_compose is None:
+            raise AdapterError("GATEWAY_CONFIG_OUTSIDE_RETAINED_PROFILES")
+        state = value.get("State", {})
+        if state.get("Paused") or state.get("Restarting") or state.get("Dead"):
+            status = "transition"
+        else:
+            status = "running" if state.get("Running") else "stopped"
+        route = self.route_probe(value["Id"]) if self.route_probe is not None else None
+        return {"kind": "container", "id": value["Id"], "daemon_id": prerequisites["daemon_id"],
+                "status": status, "image_id": value.get("Image"), "labels": labels,
+                "started_at": state.get("StartedAt"), "finished_at": state.get("FinishedAt"),
+                "restart_policy": value.get("HostConfig", {}).get("RestartPolicy"),
+                "mounts": value.get("Mounts", []), "route": route, "compose": matched_compose}
+
+    @staticmethod
+    def _configuration(value):
+        labels = value.get("labels", {})
+        return {key: value.get(key, labels.get("local-hand.deploy." + suffix))
+                for key, suffix in (("config_digest", "config"), ("deployment_digest", "deployment"))}
+
+    @classmethod
+    def _retain_original_binding(cls, value, original):
+        # The planner may bind a pre-existing unlabeled container to its verified
+        # original startup selection. Carry that proof only for that exact object
+        # and resolved configuration, never onto a replacement container.
+        if (value.get("kind") == original.get("kind") == "container"
+                and value.get("id") == original.get("id")
+                and value.get("daemon_id") == original.get("daemon_id")
+                and value.get("compose") == original.get("compose")):
+            return {**value, **cls._configuration(original)}
+        return value
+
+    def plan(self, target, baseline=None):
+        before = self.observe() if baseline is None else baseline
+        if target.get("running") not in (True, False) or not isinstance(target.get("present", True), bool):
+            raise AdapterError("GATEWAY_TARGET")
+        if before.get("status") == "transition":
+            raise AdapterError("GATEWAY_TRANSITION_PENDING")
+        desired = {"present": True, **target}
+        if desired["present"] and desired["running"]:
+            self.prerequisites(starting=True)
+        configuration = self._configuration(before)
+        changed = before["kind"] == "container" and (before.get("compose") != self.profile["compose"] or
+            any(configuration.get(key) != target.get(key) for key in ("config_digest", "deployment_digest")))
+        actions = []
+        if before.get("status") == "running" and (changed or not desired["running"] or not desired["present"]):
+            actions.append({"kind": "gateway_stop", "target": self.service, "before": before,
+                            "after": {"running": False}, "subeffects": ["stop"], "phase": "quiesced_before_files"})
+        if before["kind"] == "container" and (changed or not desired["present"]):
+            actions.append({"kind": "gateway_remove", "target": self.service, "before": before,
+                            "after": {"present": False}, "subeffects": ["remove"], "phase": "after_stop"})
+        if desired["present"] and (before["kind"] == "absent" or changed):
+            actions.append({"kind": "gateway_create", "target": self.service, "before": {"kind": "absent", "daemon_id": before["daemon_id"]},
+                            "original": before, "after": desired, "subeffects": ["create"], "phase": "after_files"})
+        if desired["present"] and desired["running"] and (before.get("status") != "running" or changed):
+            actions.append({"kind": "gateway_start", "target": self.service, "before": before,
+                            "after": desired, "subeffects": ["start"], "phase": "after_create"})
+        return [{**action, "compose": self.profile["compose"]} for action in actions]
+
+    def plan_restore(self, original_actions, observations=None):
+        if not original_actions:
+            return []
+        old = original_actions[0].get("original", original_actions[0]["before"])
+        if old["kind"] == "absent":
+            return self.plan({"present": False, "running": False}, observations)
+        if not old.get("compose"):
+            raise AdapterError("ORIGINAL_GATEWAY_COMPOSE_REQUIRED")
+        configuration = self._configuration(old)
+        if any(not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value)
+               for value in configuration.values()):
+            raise AdapterError("ORIGINAL_GATEWAY_CONFIGURATION_BINDING_REQUIRED")
+        restored = self._using(old["compose"])
+        current = restored.observe() if observations is None else observations
+        current = self._retain_original_binding(current, old)
+        return restored.plan({"present": True, "running": old["status"] == "running",
+                              **configuration}, current)
+
+    def _validate_action(self, action):
+        if action.get("kind") not in ("gateway_create", "gateway_start", "gateway_stop", "gateway_remove") or action.get("target") != self.service:
+            raise AdapterError("GATEWAY_ACTION_SCOPE")
+        if "compose" in action:
+            self._validate_compose(action["compose"])
+
+    def observe_action(self, action, previous=None, *, lock_fd=None):
+        self._validate_action(action)
+        adapter = self._using(action.get("compose", self.profile["compose"]))
+        if adapter is not self:
+            return adapter.observe_action(action, previous, lock_fd=lock_fd)
+        supervised = self.runner.observe(previous.get("binding", previous), lock_fd=lock_fd) if previous else None
+        if supervised and not supervised["closed"]:
+            return {"outcome": "running", "closed": False, "postcondition": False, "supervision": supervised,
+                    "dispatched": None}
+        value = self._retain_original_binding(self.observe(), action["before"])
+        kind = action["kind"]
+        result = supervised and supervised.get("result") or {}
+        dispatch_recorded = supervised and any(event.get("kind") == "engine_dispatch" for event in supervised["events"])
+        completed = previous is None or result.get("status") == "returned" or not dispatch_recorded
+        # Engine stop/start/create may outlive a broken HTTP request. Exact
+        # matching container/attempt effects are adoptable; original values alone
+        # are never a retry proof following an unknown response.
+        if kind == "gateway_remove":
+            target = value["kind"] == "absent"
+        elif kind == "gateway_stop":
+            target = value["kind"] == "container" and value["id"] == action["before"]["id"] and value["status"] == "stopped"
+        else:
+            labels = value.get("labels", {})
+            target = value["kind"] == "container" and all(self._configuration(value).get(key) == action["after"].get(key)
+                for key in ("config_digest", "deployment_digest"))
+            if previous and kind == "gateway_create":
+                target = target and labels.get("local-hand.deploy.attempt") == previous.get("binding", previous)["attempt_id"]
+            if kind == "gateway_start":
+                route = value.get("route") or {}
+                target = (target and value.get("status") == "running" and route.get("container_id") == value["id"]
+                          and route.get("config_digest") == action["after"]["config_digest"] and route.get("protocol_ready") is True)
+        original = value == action["before"]
+        # An acknowledged fixed Engine operation is synchronous at this API
+        # boundary. Lost response may be adopted ONLY for its exact target; no
+        # retry against original/absent state without daemon-side completion proof.
+        closed = completed or target
+        outcome = "target" if target and closed else "unknown" if not closed else "original" if original else "partial" if value.get("status") == "stopped" else "conflict"
+        return {"outcome": outcome, "postcondition": target and closed, "closed": closed,
+                "observation": value, "supervision": supervised,
+                "proof": "satisfied_observed" if target and not completed else "observed",
+                "dispatched": bool(dispatch_recorded)}
+
+    def execute(self, action, *, attempt_id, lock_fd, persist_intent, previous=None):
+        self._validate_action(action)
+        adapter = self._using(action.get("compose", self.profile["compose"]))
+        if adapter is not self:
+            return adapter.execute(action, attempt_id=attempt_id, lock_fd=lock_fd, persist_intent=persist_intent, previous=previous)
+        verify_lock(lock_fd)
+        observed = self.observe_action(action, previous, lock_fd=lock_fd)
+        if observed["postcondition"] or not observed["closed"]:
+            return observed
+        if observed["outcome"] == "conflict":
+            raise AdapterError("GATEWAY_OBSERVATION_CONFLICT")
+        if previous is not None and previous.get("binding", previous).get("attempt_id") == attempt_id:
+            return observed
+        if action["kind"] in ("gateway_create", "gateway_start"):
+            if self.guard_check is None:
+                raise AdapterError("GATEWAY_STARTUP_GUARD_REQUIRED")
+            validate_guard(self.guard_check(self.service, {**action["after"], "attempt_id": attempt_id}), action["after"],
+                           attempt_id=attempt_id, allow_stopped=action["kind"] == "gateway_create")
+        self.prerequisites(starting=action["kind"] == "gateway_start")
+        augmented = {**action, "attempt_id": attempt_id}
+        outcome = self.runner.run(augmented, self._perform, attempt_id=attempt_id, lock_fd=lock_fd,
+                                  persist_intent=persist_intent)
+        return {**self.observe_action(action, outcome, lock_fd=lock_fd), "attempt": outcome}
+
+    def _create_body(self, target, attempt_id):
+        source = self.profile["compose"]["services"][self.service]
+        ports, bindings = {}, {}
+        for port in source.get("ports", []):
+            key = str(port["target"]) + "/tcp"
+            ports[key] = {}
+            bindings.setdefault(key, []).append({"HostIp": port.get("host_ip", ""), "HostPort": str(port["published"])})
+        labels = {**source.get("labels", {}), "com.docker.compose.project": self.project,
+                  "com.docker.compose.service": self.service, "com.docker.compose.oneoff": "False",
+                  "local-hand.deploy.config": target["config_digest"], "local-hand.deploy.deployment": target["deployment_digest"],
+                  "local-hand.deploy.attempt": attempt_id}
+        mounts = [{"Type": "bind", "Source": m["source"], "Target": m["target"], "ReadOnly": True,
+                   "BindOptions": {"CreateMountpoint": False}} for m in source.get("volumes", [])]
+        endpoints = {self.profile["compose"]["networks"][logical].get("name", logical): {} for logical in source.get("networks", {})}
+        body = {"Image": source["image"], "Labels": labels, "Env": [str(k) + "=" + str(v) for k, v in sorted(source.get("environment", {}).items())],
+                "ExposedPorts": ports,
+                "HostConfig": {"Mounts": mounts, "PortBindings": bindings, "ReadonlyRootfs": source.get("read_only", False),
+                               "RestartPolicy": {"Name": source.get("restart", "no")}, "AutoRemove": False,
+                               "CapDrop": source.get("cap_drop", []), "SecurityOpt": source.get("security_opt", []),
+                               "NetworkMode": next(iter(endpoints), "none")},
+                "NetworkingConfig": {"EndpointsConfig": endpoints}}
+        for source_key, destination in (("entrypoint", "Entrypoint"), ("command", "Cmd"), ("user", "User")):
+            if source_key in source:
+                body[destination] = source[source_key]
+        return body
+
+    def _perform(self, action, emit):
+        self._validate_action(action)
+        adapter = self._using(action.get("compose", self.profile["compose"]))
+        if adapter is not self:
+            return adapter._perform(action, emit)
+        self.prerequisites(starting=action["kind"] == "gateway_start")
+        value = self.observe()
+        kind = action["kind"]
+        if kind == "gateway_create":
+            if value["kind"] != "absent":
+                raise AdapterError("GATEWAY_CREATE_TARGET_OCCUPIED")
+            emit({"kind": "engine_dispatch", "action": kind, "name": self.name})
+            created = self.engine.request("POST", "/containers/create?name=" + _quote(self.name),
+                                          self._create_body(action["after"], action["attempt_id"]))
+            emit({"kind": "engine_returned", "action": kind, "container_id": created["Id"]})
+            return {"container_id": created["Id"]}
+        if value["kind"] != "container":
+            raise AdapterError("GATEWAY_CONTAINER_MISSING")
+        if kind in ("gateway_stop", "gateway_remove") and value["id"] != action["before"]["id"]:
+            raise AdapterError("GATEWAY_CONTAINER_ID_CHANGED")
+        if kind == "gateway_remove" and value["status"] != "stopped":
+            raise AdapterError("GATEWAY_REMOVE_REQUIRES_STOPPED")
+        emit({"kind": "engine_dispatch", "action": kind, "container_id": value["id"]})
+        path = "/containers/" + _quote(value["id"])
+        if kind == "gateway_remove":
+            self.engine.request("DELETE", path + "?force=false&v=false")
+        elif kind == "gateway_stop":
+            self.engine.request("POST", path + "/stop?t=10")
+        else:
+            self.engine.request("POST", path + "/start")
+        emit({"kind": "engine_returned", "action": kind, "container_id": value["id"]})
+        return {"container_id": value["id"]}

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, ExitStack
 from contextvars import ContextVar
 import importlib.metadata
 import json
@@ -461,8 +461,12 @@ def create_app(broker, verifier):
             await verifier.validate_readiness()
             async with sdk_lifespan(current):
                 try:
+                    if isinstance(getattr(broker, "deployment_proof", None), dict):
+                        broker.deployment_proof["protocol_ready"] = True
                     yield
                 finally:
+                    if isinstance(getattr(broker, "deployment_proof", None), dict):
+                        broker.deployment_proof["protocol_ready"] = False
                     # Refuse executor-queued calls before SDK teardown. Calls
                     # already delivered to the broker retain their identity and
                     # occupied capacity; transport shutdown is not job cancel.
@@ -487,6 +491,7 @@ def main(argv=None) -> int:
     mode.add_argument("--resident", help="Persistent task preparation and routing descriptor")
     parser.add_argument("--auth-config", required=True, help="Private external-issuer admission")
     parser.add_argument("--port", required=True, type=int, help="Admitted loopback listener port")
+    parser.add_argument("--startup-config", help="Protected deployment startup selection binding")
     args = parser.parse_args(argv)
     try:
         _require_optional()
@@ -509,35 +514,46 @@ def main(argv=None) -> int:
 
         if not 1 <= args.port <= 65535:
             raise ValueError("Invalid listener port")
-        auth = AuthConfig.from_file(args.auth_config)
-        # The first implementation only listens on loopback, for an admitted
-        # TLS gateway/Tunnel; it cannot accidentally publish an unauthenticated
-        # host interface. External connection admission remains E4.
-        broker = create_broker(args.config, actual_entrypoint=__file__, session_path=args.session,
-                               **({"read_only": True} if args.read_only or args.prepared_task or args.resident else {}))
-        maintenance = None
-        failed = False
-        try:
-            retained = broker
-            if args.prepared_task:
-                from local_hand_mcp.prepared import PreparedBroker
-                broker = PreparedBroker.open(retained, args.prepared_task, actual_entrypoint=__file__)
-            if args.resident:
-                from local_hand_mcp.resident import ResidentBroker
-                broker = ResidentBroker.open(retained, args.resident)
-            peers = {int(uid): Principal(identity, frozenset(broker.policy.principals[identity]["scopes"]))
-                     for uid, identity in broker.policy.local_peers.items()}
-            maintenance = MaintenanceServer(broker, Path(retained.policy.broker_root) / "maintenance.sock", peers)
-            broker.start()
-            maintenance.start()
-            uvicorn.run(create_app(broker, JWTVerifier(auth)), host="127.0.0.1", port=args.port,
-                        access_log=False, log_level="warning", limit_concurrency=MAX_CONTROL_REQUESTS,
-                        timeout_keep_alive=5, proxy_headers=False)
-        except BaseException:
-            failed = True
-            raise
-        finally:
-            close_service(broker, maintenance, failed=failed)
+        from local_hand_mcp.startup_guard import guard
+        with ExitStack() as startup_stack:
+            guarded = startup_stack.enter_context(guard(args))
+            auth = AuthConfig.from_file(args.auth_config)
+            # Configuration reads and bind share the privileged startup lock.
+            # Only the prebound loopback socket is handed to the HTTP server.
+            broker = create_broker(args.config, actual_entrypoint=__file__, session_path=args.session,
+                                   **({"read_only": True} if args.read_only or args.prepared_task or args.resident else {}))
+            maintenance = listener = None
+            failed = False
+            try:
+                retained = broker
+                if args.prepared_task:
+                    from local_hand_mcp.prepared import PreparedBroker
+                    broker = PreparedBroker.open(retained, args.prepared_task, actual_entrypoint=__file__)
+                if args.resident:
+                    from local_hand_mcp.resident import ResidentBroker
+                    broker = ResidentBroker.open(retained, args.resident)
+                peers = {int(uid): Principal(identity, frozenset(broker.policy.principals[identity]["scopes"]))
+                         for uid, identity in broker.policy.local_peers.items()}
+                maintenance = MaintenanceServer(broker, Path(retained.policy.broker_root) / "maintenance.sock", peers)
+                broker.start()
+                if guarded is not None:
+                    listener = guarded["bind"]()
+                    broker.deployment_proof = guarded["proof"]
+                startup_stack.close()
+                # The secondary Unix endpoint can execute broker requests too;
+                # publish it only after the same startup lease was acknowledged.
+                maintenance.start()
+                options = {"fd": listener.fileno()} if listener is not None else {"host": "127.0.0.1", "port": args.port}
+                uvicorn.run(create_app(broker, JWTVerifier(auth)), **options,
+                            access_log=False, log_level="warning", limit_concurrency=MAX_CONTROL_REQUESTS,
+                            timeout_keep_alive=5, proxy_headers=False)
+            except BaseException:
+                failed = True
+                raise
+            finally:
+                if listener is not None:
+                    listener.close()
+                close_service(broker, maintenance, failed=failed)
         return 0
     except (RuntimeError, ValueError, JobError) as exc:
         message = str(exc) if isinstance(exc, RuntimeError) else "Private MCP admission or broker startup failed"

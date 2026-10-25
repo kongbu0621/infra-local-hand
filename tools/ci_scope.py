@@ -10,6 +10,9 @@ import subprocess
 CORE_PATTERNS = (
     "test_local_hand_jobs_*.py",
     "test_local_hand_mcp_*.py",
+    "test_local_hand_deploy_*.py",
+    "test_local_hand_maintenance_gate.py",
+    "test_local_hand_startup_*.py",
     "test_e3_q4_*.py",
 )
 CORE_FILES = (
@@ -66,7 +69,8 @@ def select_tests(root: Path, suite: str, platform: str, changed_tests=()) -> lis
                 selected.add(root / path)
     # Keep the existing Windows boundary: jobs/MCP/plugin require Unix ownership.
     if platform == "windows":
-        selected = {p for p in selected if not p.name.startswith(("test_local_hand_jobs_", "test_local_hand_mcp_"))
+        selected = {p for p in selected if not p.name.startswith(("test_local_hand_jobs_", "test_local_hand_mcp_", "test_local_hand_deploy_", "test_local_hand_startup_"))
+                    and p.name != "test_local_hand_maintenance_gate.py"
                     and p.name != "test_local_hand_plugin.py"}
     if not selected or any(not p.is_file() for p in selected):
         raise ValueError("test scope is empty or references a missing test")
@@ -82,7 +86,8 @@ def plan(paths: list[str], *, full: bool = False, uncertain: bool = False) -> di
                            and Path(p).name.startswith("test_") and p.endswith(".py"))
     shared_tests = any(Path(p).name.startswith("test_local_hand_")
                        and Path(p).name not in CORE_FILES
-                       and not Path(p).name.startswith(("test_local_hand_jobs_", "test_local_hand_mcp_"))
+                       and not Path(p).name.startswith(("test_local_hand_jobs_", "test_local_hand_mcp_", "test_local_hand_deploy_", "test_local_hand_startup_"))
+                       and Path(p).name != "test_local_hand_maintenance_gate.py"
                        for p in changed_tests)
     windows = full or shared or shared_tests or fixture_changed
     return {

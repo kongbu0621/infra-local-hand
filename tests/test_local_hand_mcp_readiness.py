@@ -53,6 +53,17 @@ class ReadinessTests(unittest.IsolatedAsyncioTestCase):
                 self.fail("ASGI startup admitted an issuer without verification keys")
         self.assertEqual([], broker.calls)
 
+    async def test_loaded_protocol_proof_tracks_actual_asgi_readiness(self):
+        from local_hand_mcp.server import create_app
+        from test_local_hand_mcp_server import MemoryBroker
+        issuer, broker = SyntheticIssuer(), MemoryBroker()
+        broker.deployment_proof = {'protocol_ready': False}
+        app = create_app(broker, issuer.verifier)
+        self.assertIs(False, broker.deployment_proof['protocol_ready'])
+        async with app.router.lifespan_context(app):
+            self.assertIs(True, broker.deployment_proof['protocol_ready'])
+        self.assertIs(False, broker.deployment_proof['protocol_ready'])
+
     async def test_unavailable_keys_have_a_finite_startup_budget(self):
         import httpx2
         issuer = SyntheticIssuer()

@@ -7,7 +7,8 @@ Preparation and execution have separate durable records; reads start neither.
 from __future__ import annotations
 
 import argparse
-from contextlib import closing
+from contextlib import closing, nullcontext
+import copy
 import fcntl
 import hashlib
 import json
@@ -22,12 +23,12 @@ import threading
 import time
 import uuid
 
-from local_hand_jobs import budget, cli, forwarded_bounds, quota_contract as q
+from local_hand_jobs import budget, cli, forwarded_bounds, maintenance, quota_contract as q
 from local_hand_jobs.contract import DISABLED_JOB_KINDS, JobError, Principal, MAX_WORKSPACE_TEXT_BYTES, canonical_bytes, strict_loads, validate_tool_args
 from local_hand_jobs.task_session import read_descriptor
 from admin.local_hand_quota_observer.protected_inputs import read_protected
 from . import provision_task, task_service
-from .prepared_service import FixedLauncher
+from .prepared_service import FixedLauncher, unit_closed
 
 
 def load(path):
@@ -66,10 +67,15 @@ def check_local_a2_management_paths(config):
 class ResidentService:
     def __init__(self, config):
         check_local_a2_management_paths(config)
-        self.config=config
+        self.config=copy.deepcopy(config) if config.get('maintenance') is not None else config
+        config=self.config
         self.root=Path(config['private_root']);self.catalog=Path(config['catalog'])
         self.fence=threading.RLock();self.worker=None;self.launchers={}
         self.boot=budget.current_clock()['boot_id']
+        self.maintenance_gate=maintenance.from_config(config)
+        self.loaded_deployment=(maintenance.loaded_configuration(config,boot_id=self.boot)
+                                if self.maintenance_gate is not None else None)
+        self.protocol_ready=False
         self.records={}
         for path in sorted(self.root.glob('*/current.json')):
             record=load(path)
@@ -81,6 +87,22 @@ class ResidentService:
         # interrupted after its commit but before replacing this derived view.
         for record in self.records.values():
             self._catalog(record)
+
+    def recover_undispatched(self):
+        """Called only after acquiring the exclusive original service lock.
+
+        Covers death between accepting duty and publishing the task's pointer.
+        ACCEPTED proves the gate's durable dispatch barrier was never crossed;
+        DISPATCHING requires original exit/unit proof and is never guessed away.
+        """
+        if self.maintenance_gate is None:return
+        for duty in self.maintenance_gate.active():
+            if (duty['kind']=='prepare' and duty['state']=='ACCEPTED'
+                    and duty['binding'].get('private_root')==str(self.root)):
+                self.maintenance_gate.finish(duty,dict(never_dispatched=True))
+                record=self.records.get(duty['operation_id'])
+                if record is not None and record['attempt']==duty['attempt_id'] and record['state']=='PREPARING':
+                    self._save(dict(record,state='FAILED'))
 
     def _catalog(self, record):
         public={k:record[k] for k in ('operation_id','principal_id','state')}
@@ -117,8 +139,17 @@ class ResidentService:
         key=record['attempt']
         if key not in self.launchers:
             launch=load(record['launch_path'])
+            bounds={}
+            if self.maintenance_gate is not None:
+                prepared=record.get('maintenance_prepared')
+                if prepared is not None and (prepared.get('operation_id')!=record['operation_id']
+                        or prepared.get('attempt_id')!=record['attempt']
+                        or prepared.get('request_digest')!=launch['request']['request_digest']
+                        or prepared.get('resource_digest')!=maintenance.digest(launch)):
+                    raise JobError('STALE_DEPLOYMENT','Original preparation has no matching deployment binding')
+                bounds=dict(maintenance_gate=self.maintenance_gate,loaded=self.loaded_deployment,prepared=prepared)
             self.launchers[key]=FixedLauncher(launch,self.config['installation'],
-                record['launch_path'],record['output'])
+                record['launch_path'],record['output'],**bounds)
         return self.launchers[key]
 
     def execution_state(self, record):
@@ -230,6 +261,10 @@ class ResidentService:
                         self._catalog(record)
                         return dict(operation_id=operation,state='READY',request=record['request'])
                     stale=record['boot_id']!=self.boot or record['request']['expires_at']<=time.time()
+                    if self.maintenance_gate is not None:
+                        bound=record.get('maintenance_prepared',{})
+                        stale=stale or any(bound.get(key)!=self.loaded_deployment[key] for key in
+                                          ('deployment_digest','configuration_digest','payload_digest'))
                     if (args.get('retry_failed') and self.config.get('installation',{}).get('source')
                             and record.get('launch_path')):
                         original=load(record['launch_path'])['policy']
@@ -255,16 +290,38 @@ class ResidentService:
                 raise JobError('LIMIT_EXCEEDED','Configured quota project range is full')
             if authorization is not None:
                 authorization.require_current()
-            operation_root.mkdir(mode=0o700,exist_ok=True)
             attempt=operation_root/('attempt-'+str(serial))
-            attempt.mkdir(mode=0o700)
             record=dict(operation_id=operation,principal_id=principal,state='PREPARING',attempt=str(attempt),
                 serial=serial,boot_id=self.boot,prepare_unit='lhprepare'+uuid.UUID(operation).hex+'a'+str(serial)+'.service')
             if args['kind'] in {'workspace.edit','ledger.test.local_a2'}:
                 record.update(kind=args['kind'],inputs=args['inputs'])
-            self._save(record)
-            self.worker=threading.Thread(target=self._prepare_worker,args=(record,),daemon=True)
-            self.worker.start()
+            receipt=None
+            if self.maintenance_gate is not None:
+                receipt=self.maintenance_gate.accept('prepare',operation,str(attempt),
+                    dict(arguments=args,principal_id=principal,private_root=str(self.root)),
+                    self.loaded_deployment,authorization=authorization)
+                record['maintenance_admission']=receipt
+            ready=threading.Event()
+            started=False
+            def work_after_start():
+                ready.wait()
+                if started:self._prepare_worker(*worker_args)
+            try:
+                operation_root.mkdir(mode=0o700,exist_ok=True)
+                attempt.mkdir(mode=0o700)
+                self._save(record)
+                worker_args=(record,) if authorization is None else (record,authorization)
+                self.worker=threading.Thread(target=work_after_start,daemon=True)
+                self.worker.start()
+                started=True
+            except BaseException:
+                # Even if native thread creation happened, it cannot dispatch
+                # until successful start() acknowledgement sets started.
+                if receipt is not None and not started:
+                    self.maintenance_gate.finish(receipt,dict(never_dispatched=True))
+                raise
+            finally:
+                ready.set()
             return dict(operation_id=operation,state='PREPARING')
 
     def _ready(self, record):
@@ -281,11 +338,21 @@ class ResidentService:
         record=dict(record,state='READY',request=request,policy_path=launch['policy_path'],
             launch_path=str(Path(prepared['reservation'])/'launch-static.json'),output=str(output),
             controller_unit=launch['controller_envelope']['controller']['unit'])
+        if self.maintenance_gate is not None:
+            original=record.get('maintenance_admission')
+            if original is None:
+                raise JobError('STALE_DEPLOYMENT','Preparation did not enter the shared maintenance barrier')
+            record['maintenance_prepared']=maintenance.prepared_binding(original['loaded'],
+                operation_id=record['operation_id'],attempt_id=record['attempt'],
+                request_digest=request['request_digest'],launch=launch)
         self._save(record)
         return record
 
-    def _prepare_worker(self, record):
+    def _prepare_worker(self, record, authorization=None):
         attempt=Path(record['attempt'])
+        receipt=record.get('maintenance_admission')
+        delivered=False
+        closed=False
         try:
             extra={'workspace_inputs':record['inputs']} if record.get('kind')=='workspace.edit' else {}
             if record.get('kind')=='ledger.test.local_a2':
@@ -303,15 +370,64 @@ class ResidentService:
                 installation['installed']['package_root'],installation['source']['root']+'/tools',
                 str(attempt/'input.json'),str(attempt/'result.json')]
             publish(attempt/'preparation-delivery.json',dict(command=command))
+            if authorization is not None:authorization.require_current()
+            if receipt is not None:
+                self.maintenance_gate.dispatch(receipt,authorization=authorization)
+            delivered=True
             result=subprocess.run(command,stdin=subprocess.DEVNULL,capture_output=True,timeout=78,
                                   env={'PATH':'/usr/bin:/bin'},cwd='/')
             publish(attempt/'preparation-exit.json',dict(returncode=result.returncode,
                 stdout=result.stdout[:32768].hex(),stderr=result.stderr[:32768].hex(),
                 stdout_bytes=len(result.stdout),stderr_bytes=len(result.stderr)))
             if result.returncode!=0:raise ValueError('PROVISION_PROCESS_FAILED')
+            closed=True
             with self.fence:self._ready(record)
         except BaseException as error:
             with self.fence:self._preparation_failed(record,error)
+        finally:
+            if receipt is not None:
+                try:
+                    if not delivered:
+                        self.maintenance_gate.finish(receipt,dict(never_dispatched=True))
+                    elif closed or unit_closed(self.config['installation']['installed']['programs']['systemctl']['path'],
+                                                record['prepare_unit']):
+                        self.maintenance_gate.finish(receipt,dict(process_exited=True,writers_stopped=True))
+                except (JobError,OSError,ValueError,subprocess.SubprocessError):
+                    pass # Unobserved closure remains visible to deployment.
+
+    def deployment_observe(self):
+        """Strictly read-only proof for planning; no responsibility reconciliation."""
+        if self.maintenance_gate is None:
+            return dict(maintenance_supported=False)
+        marker=self.maintenance_gate.snapshot()
+        return dict(maintenance_supported=True,loaded=maintenance.process_proof(
+                        self.loaded_deployment,protocol_ready=self.protocol_ready),
+                    marker={key:marker[key] for key in ('state','sequence','owner','decision_id','deployment_digest')})
+
+    def deployment_status(self):
+        """Explicit drain observation may close only positively proved duties."""
+        if self.maintenance_gate is None:
+            return dict(maintenance_supported=False)
+        # A crashed collector is not silently forgotten. Reuse retained exit
+        # proof and positively observe the original unit before closing duty.
+        for record in self.records.values():
+            receipt=record.get('maintenance_admission')
+            if receipt is not None:
+                try:
+                    attempt=Path(record['attempt'])
+                    active={item['id']:item for item in self.maintenance_gate.active()}
+                    duty=active.get(receipt['id'])
+                    if duty is not None and not (self.worker is not None and self.worker.is_alive()):
+                        if duty['state']=='ACCEPTED' and not (attempt/'preparation-delivery.json').exists():
+                            self.maintenance_gate.finish(receipt,dict(never_dispatched=True))
+                        elif (attempt/'preparation-exit.json').exists() and unit_closed(
+                                self.config['installation']['installed']['programs']['systemctl']['path'],record['prepare_unit']):
+                            self.maintenance_gate.finish(receipt,dict(process_exited=True,writers_stopped=True))
+                    if record['state']=='READY':
+                        self._launcher(record).state()
+                except (JobError,OSError,ValueError,subprocess.SubprocessError):
+                    pass
+        return self.deployment_observe()
 
     def _preparation_failed(self, record, error):
         directory=os.open(record['attempt'],os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
@@ -345,9 +461,14 @@ class ResidentService:
                     raise JobError('UNAUTHORIZED','Installed scope grant is unavailable')
                 request,authorization=forwarded_bounds.restrict(request,Principal(principal,frozenset(scopes)))
                 required={'prepare':{'lh:submit'},'start':{'lh:submit'},'workspace_read':{'lh:read'},
-                          'status':{'lh:read','lh:submit','lh:cancel','lh:evidence'}}.get(action,set())
+                          'status':{'lh:read','lh:submit','lh:cancel','lh:evidence'},
+                          'deployment_status':{'lh:inspect'},'deployment_observe':{'lh:inspect'}}.get(action,set())
                 if not required.intersection(authorization.scopes):
                     raise JobError('UNAUTHORIZED','Forwarded scope does not permit this action')
+            if action in {'deployment_status','deployment_observe'}:
+                q.require(set(request)=={'action','principal_id'},'RESIDENT_REQUEST')
+                if authorization is not None:authorization.require_current()
+                return self.deployment_status() if action=='deployment_status' else self.deployment_observe()
             if action=='workspace_read':
                 q.require(set(request)=={'action','principal_id','profile_ref','source_ref','relative_path'},'RESIDENT_REQUEST')
                 args=validate_tool_args('lh_workspace_read',{k:v for k,v in request.items() if k not in {'action','principal_id'}})
@@ -443,6 +564,15 @@ def serve(config):
     lock=os.open(Path(config['private_root'])/'service.lock',os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)
     fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
     service=ResidentService(config)
+    service.recover_undispatched()
+    if service.maintenance_gate is not None:
+        from local_hand_jobs.deployment import verify_release
+        from local_hand_jobs import startup
+        installation=config['installation']
+        verify_release(expected_source_commit=installation['source']['commit'],
+            expected_payload_digest=installation['installed']['payload_digest'],
+            expected_entrypoint=installation['installed']['package_root']+'/local_hand_jobs/cli.py',
+            actual_entrypoint=cli.__file__)
     endpoint=Path(config['socket']);parent=endpoint.parent
     for item in (parent,*parent.parents):
         info=item.lstat()
@@ -452,7 +582,11 @@ def serve(config):
         q.require(stat.S_ISSOCK(info.st_mode) and info.st_uid==0,'RESIDENT_SOCKET_CHANGED')
         endpoint.unlink() # The service lock excludes another admitted listener.
     with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as listener:
-        listener.bind(str(endpoint));os.chown(endpoint,0,config['gid']);endpoint.chmod(0o660);listener.listen(16)
+        guard=(startup.authorize(config,service.loaded_deployment,service.maintenance_gate)
+               if service.maintenance_gate is not None else nullcontext())
+        with guard:
+            listener.bind(str(endpoint));os.chown(endpoint,0,config['gid']);endpoint.chmod(0o660);listener.listen(16)
+            service.protocol_ready=True
         info=endpoint.lstat()
         publish(config['socket_descriptor'],dict(socket=dict(path=str(endpoint),device=info.st_dev,inode=info.st_ino)),0o644)
         while True:
@@ -460,9 +594,21 @@ def serve(config):
             with connection:
                 end=time.monotonic()+3
                 try:
-                    _,uid,gid=struct.unpack('3i',connection.getsockopt(socket.SOL_SOCKET,socket.SO_PEERCRED,12))
-                    if (uid,gid)!=(config['uid'],config['gid']):raise JobError('UNAUTHORIZED','Peer is not admitted')
-                    result=service.call(strict_loads(cli._read_frame(connection,cli.MAX_REQUEST_BYTES,deadline=end)))
+                    peer_pid,uid,gid=struct.unpack('3i',connection.getsockopt(socket.SOL_SOCKET,socket.SO_PEERCRED,12))
+                    request=strict_loads(cli._read_frame(connection,cli.MAX_REQUEST_BYTES,deadline=end))
+                    if (request=={'action':'startup_authorize','component':'mcp'}
+                            and (uid==0 or (uid,gid)==(config['uid'],config['gid']))):
+                        if service.maintenance_gate is None:
+                            raise JobError('UNSUPPORTED','Legacy service has no startup selection authority')
+                        startup.serve_authorization(connection,config,service.maintenance_gate,peer_pid=peer_pid)
+                        continue
+                    if uid==0 and request in ({'action':'deployment_status'},{'action':'deployment_observe'}):
+                        with service.fence:
+                            result=(service.deployment_status() if request['action']=='deployment_status'
+                                    else service.deployment_observe())
+                    else:
+                        if (uid,gid)!=(config['uid'],config['gid']):raise JobError('UNAUTHORIZED','Peer is not admitted')
+                        result=service.call(request)
                     response=dict(result=result)
                 except JobError as error:response=dict(error=error.as_dict())
                 except Exception:response=dict(error=dict(code='IO_UNCERTAIN',message='Task service needs state inspection'))

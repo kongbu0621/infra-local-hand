@@ -7,6 +7,8 @@ client. A retained launch intent survives an uncertain reply or daemon exit.
 from __future__ import annotations
 
 import argparse
+from contextlib import nullcontext
+import fcntl
 import hashlib
 import json
 import os
@@ -18,13 +20,51 @@ import struct
 import subprocess
 import threading
 import time
+import uuid
 
-from local_hand_jobs import budget, cli, forwarded_bounds, quota_contract as q
+from local_hand_jobs import budget, cli, forwarded_bounds, maintenance, quota_contract as q
 from local_hand_jobs.contract import JobError, strict_loads
 from local_hand_jobs.evidence import _publish_create_only, _same
 from admin.local_hand_quota_observer import controller_guard, q2_config
 from admin.local_hand_quota_observer.protected_inputs import read_protected
 from . import task_service
+
+
+def acquire_service_lock(path):
+    """Pin and protect the single recovery/dispatch owner before any recovery."""
+    path=Path(path)
+    info=path.stat()
+    directory=q2_config.pinned_directory(dict(path=str(path),device=info.st_dev,inode=info.st_ino))
+    lock=None
+    try:
+        info=os.fstat(directory)
+        q.require(info.st_uid==0 and stat.S_IMODE(info.st_mode)==0o700,'PREPARED_OUTPUT_PROTECTION')
+        lock=os.open('service.lock',os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW|os.O_CLOEXEC|os.O_NONBLOCK,
+                     0o600,dir_fd=directory)
+        info=os.fstat(lock)
+        q.require(stat.S_ISREG(info.st_mode) and info.st_uid==0 and stat.S_IMODE(info.st_mode)==0o600
+                  and info.st_nlink==1,'SERVICE_LOCK_PROTECTION')
+        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        named=os.stat('service.lock',dir_fd=directory,follow_symlinks=False)
+        q.require((named.st_dev,named.st_ino)==(info.st_dev,info.st_ino),'SERVICE_LOCK_CHANGED')
+        return lock
+    except BaseException:
+        if lock is not None:os.close(lock)
+        raise
+    finally:os.close(directory)
+
+
+def unit_closed(systemctl, unit):
+    """Inactive alone does not rule out a queued systemd start job."""
+    result=subprocess.run([systemctl,'show',unit,'-p','ActiveState','-p','Job'],
+                          capture_output=True,text=True,timeout=3)
+    values={}
+    for line in result.stdout.splitlines():
+        key,separator,value=line.partition('=')
+        if not separator or key in values:return False
+        values[key]=value
+    return (result.returncode==0 and set(values)=={'ActiveState','Job'}
+            and values['ActiveState'] in {'inactive','failed'} and values['Job'] in {'','0','0 /'})
 
 
 def controller_command(launch, installation, static, dynamic):
@@ -69,7 +109,7 @@ def controller(static, dynamic):
 
 
 class FixedLauncher:
-    def __init__(self, launch, installation, static, output):
+    def __init__(self, launch, installation, static, output, *, maintenance_gate=None, loaded=None, prepared=None):
         self.launch, self.installation, self.static = launch, installation, static
         self.output = Path(output)
         self.directory = q2_config.pinned_directory(dict(path=str(self.output),
@@ -86,18 +126,52 @@ class FixedLauncher:
         self.intent_fd = None
         self.intent_identity = None
         self.sequence = 0
+        self.maintenance_gate=maintenance_gate
+        self.loaded_deployment=loaded
+        self.maintenance_prepared=prepared
+        self.maintenance_admission=None
         self.started = (self.output/'started.json').exists() or (self.output/'launch-intent.json').exists()
         self.finished = (self.output/'finished.json').exists()
         if self.finished:
             value = q._load(read_protected(str(self.output/'finished.json'), 256*1024), 256*1024, 12)
             q.require(value.get('streams_eof') is True and type(value.get('returncode')) is int,
                       'PREPARED_EXIT_PROOF')
+            self.result=value
+        if maintenance_gate is not None:
+            try:duties=maintenance_gate.active()
+            except JobError:duties=[] # A corrupt gate must not disable old reads.
+            for duty in duties:
+                if (duty['kind']=='execute' and duty['operation_id']==launch['request']['operation_id']
+                        and duty['binding'].get('prepared')==prepared):
+                    if self.maintenance_admission is not None:
+                        raise JobError('IO_UNCERTAIN','Several execution admissions need original-state inspection')
+                    self.maintenance_admission=duty
+                    if duty['state']=='ACCEPTED' and not self.started:
+                        # The enclosing service lock excludes the old caller.
+                        # DISPATCHING is never inferred closed from file absence.
+                        maintenance_gate.finish(duty,dict(never_dispatched=True))
+                        self.maintenance_admission=None
+
+    def _maintenance_finish(self):
+        gate=getattr(self,'maintenance_gate',None)
+        receipt=getattr(self,'maintenance_admission',None)
+        if gate is None or receipt is None or not self.finished:return
+        try:
+            proof=self.result
+            if proof is None or proof.get('streams_eof') is not True:return
+            if proof['returncode']!=0:
+                if not unit_closed(self.installation['installed']['programs']['systemctl']['path'],
+                                   self.launch['controller_envelope']['controller']['unit']):return
+            gate.finish(receipt,dict(process_exited=True,writers_stopped=True))
+        except (JobError,OSError,ValueError,KeyError,subprocess.SubprocessError):
+            pass # Reads remain available; uncertain duty remains visible.
 
     def state(self):
         self._finish_local_failure()
         if self.failure is not None:
             raise JobError('IO_UNCERTAIN', 'Prepared controller capture needs inspection')
         if self.finished:
+            self._maintenance_finish()
             return 'EXITED'
         if self.process is not None:
             if self.complete.is_set():
@@ -109,6 +183,7 @@ class FixedLauncher:
                             self.publication_failure = type(error).__name__
                             raise JobError('IO_UNCERTAIN', 'Controller exited; completion record needs publication') from error
                         self.finished = True
+                self._maintenance_finish()
                 return 'EXITED'
             return 'RUNNING'
         if self.started:
@@ -281,6 +356,30 @@ class FixedLauncher:
             raise JobError('IO_UNCERTAIN', 'Launch intent could not be committed; no process was created') from error
 
     def start(self, *, authorization=None):
+        if authorization is not None:authorization.require_current()
+        if self.state()!='IDLE':return self.state()
+        gate=getattr(self,'maintenance_gate',None)
+        receipt=None
+        if gate is not None:
+            prepared=self.maintenance_prepared
+            if (prepared is None or prepared.get('request_digest')!=self.launch['request']['request_digest']
+                    or prepared.get('resource_digest')!=maintenance.digest(self.launch)):
+                raise JobError('STALE_DEPLOYMENT','Original prepared resources differ from their deployment binding')
+            receipt=gate.accept('execute',self.launch['request']['operation_id'],uuid.uuid4().hex,
+                dict(prepared=prepared),self.loaded_deployment,authorization=authorization,prepared=prepared)
+            self.maintenance_admission=receipt
+        try:
+            return self._start(authorization=authorization)
+        except BaseException:
+            # This process still owns the attempt and no Popen returned a
+            # child. A durable dispatch intent alone does not fabricate a
+            # remote effect; positive local no-delivery proof permits retry.
+            if receipt is not None and self.process is None and not self.started:
+                gate.finish(receipt,dict(never_dispatched=True))
+                self.maintenance_admission=None
+            raise
+
+    def _start(self, *, authorization=None):
         if authorization is not None:
             authorization.require_current()
         state = self.state()
@@ -324,6 +423,12 @@ class FixedLauncher:
                     self._retain_unstarted_intent('local-authorization-expired')
                     raise
             try:
+                if getattr(self,'maintenance_gate',None) is not None:
+                    try:
+                        self.maintenance_gate.dispatch(self.maintenance_admission,authorization=authorization)
+                    except BaseException:
+                        self._retain_unstarted_intent('local-maintenance-failed')
+                        raise
                 self.process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE, cwd='/', env={'PATH':'/usr/bin:/bin'})
             except OSError as error:
@@ -368,7 +473,10 @@ def bounded_request(request, launch):
 
 def serve(config):
     q.require(os.getuid()==os.geteuid()==0, 'PREPARED_ADMINISTRATOR')
-    q._keys(config, {'schema','launch_path','launch_sha256','installation','output','socket','descriptor'})
+    q.require(type(config) is dict and
+        {'schema','launch_path','launch_sha256','installation','output','socket','descriptor'}<=config.keys()<=
+        {'schema','launch_path','launch_sha256','installation','output','socket','descriptor','maintenance','maintenance_prepared'},
+        'PREPARED_SERVICE_FIELDS')
     q.require(config['schema']=='local-hand-prepared-service/v1', 'PREPARED_SERVICE_SCHEMA')
     raw=read_protected(config['launch_path'], 2*1024**2)
     q.require(hashlib.sha256(raw).hexdigest()==config['launch_sha256'], 'PREPARED_LAUNCH_CHANGED')
@@ -377,7 +485,14 @@ def serve(config):
     # Existing admission checks run before making the fixed launcher reachable.
     admission=task_service.TaskService(launch)
     admission.close()
-    launcher=FixedLauncher(launch,config['installation'],config['launch_path'],config['output'])
+    gate=maintenance.from_config(config)
+    loaded=(maintenance.loaded_configuration(config,boot_id=budget.current_clock()['boot_id'])
+            if gate is not None else None)
+    # One listener owns recovery and dispatch for this immutable task. Never
+    # retire an ACCEPTED receipt while an earlier caller can still deliver it.
+    service_lock=acquire_service_lock(config['output'])
+    launcher=FixedLauncher(launch,config['installation'],config['launch_path'],config['output'],
+        maintenance_gate=gate,loaded=loaded,prepared=config.get('maintenance_prepared'))
     manager=launch['policy']['process_manager'];uid,gid=manager['uid'],manager['gid']
     endpoint=Path(config['socket']);parent=endpoint.parent
     for path in (parent,*parent.parents):
@@ -385,7 +500,10 @@ def serve(config):
         q.require(stat.S_ISDIR(info.st_mode) and info.st_uid==0 and not info.st_mode&0o022,
                   'PREPARED_SOCKET_PARENT')
     with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as listener:
-        listener.bind(str(endpoint));os.chown(endpoint,0,gid);endpoint.chmod(0o660);listener.listen(8)
+        if gate is not None:
+            from local_hand_jobs import startup
+        with startup.authorize(config,loaded,gate) if gate is not None else nullcontext():
+            listener.bind(str(endpoint));os.chown(endpoint,0,gid);endpoint.chmod(0o660);listener.listen(8)
         info=endpoint.lstat()
         descriptor=dict(schema='local-hand-prepared-task/v1',policy_path=config['launch_path'],
             request=launch['request'],principal_id=launch['principal_id'],
@@ -401,9 +519,21 @@ def serve(config):
             with connection:
                 end=time.monotonic()+2
                 try:
-                    _,peer_uid,peer_gid=struct.unpack('3i',connection.getsockopt(socket.SOL_SOCKET,socket.SO_PEERCRED,12))
-                    if (peer_uid,peer_gid)!=(uid,gid):raise JobError('UNAUTHORIZED','Prepared peer is not admitted')
+                    peer_pid,peer_uid,peer_gid=struct.unpack('3i',connection.getsockopt(socket.SOL_SOCKET,socket.SO_PEERCRED,12))
                     request=strict_loads(cli._read_frame(connection,4096,deadline=end))
+                    if (request=={'action':'startup_authorize','component':'mcp'}
+                            and (peer_uid==0 or (peer_uid,peer_gid)==(uid,gid))):
+                        if gate is None:
+                            raise JobError('UNSUPPORTED','Legacy service has no startup selection authority')
+                        startup.serve_authorization(connection,config,gate,peer_pid=peer_pid)
+                        continue
+                    if peer_uid==0 and request in ({'action':'deployment_status'},{'action':'deployment_observe'}):
+                        if request['action']=='deployment_status':launcher.state()
+                        response={'result':dict(maintenance_supported=gate is not None,
+                            loaded=maintenance.process_proof(loaded,protocol_ready=True) if gate is not None else None)}
+                        cli._send_frame(connection,response,deadline=end,limit=4096)
+                        continue
+                    if (peer_uid,peer_gid)!=(uid,gid):raise JobError('UNAUTHORIZED','Prepared peer is not admitted')
                     request,authorization=bounded_request(request,launch)
                     bounds={} if authorization is None else {'authorization':authorization}
                     state=launcher.start(**bounds) if request['action']=='start' else launcher.state()
