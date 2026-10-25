@@ -62,7 +62,9 @@ class BootstrapTests(unittest.TestCase):
         self.gate_dir.mkdir(mode=0o700)
         old = {"schema": "local-hand-resident-service/v1", "private_root": str(self.records),
                "socket": str(self.root / "manager.sock"), "uid": self.uid,
-               "installation": {"installed": {"payload_digest": "c" * 64}}}
+               "installation": {"installed": {"payload_digest": "c" * 64,
+                   "package_root": str(Path(bootstrap.__file__).parents[2]),
+                   "programs": {"python": {"path": sys.executable}}}}}
         self.old = copy.deepcopy(old)
         candidate = {**old, "maintenance": {"schema": maintenance.CONFIG_SCHEMA, "node_id": "node",
             "deployment_digest": "a" * 64, "directory": str(self.gate_dir), "startup_descriptor": str(self.descriptor)}}
@@ -82,6 +84,7 @@ class BootstrapTests(unittest.TestCase):
         stopped = {"ActiveState": "inactive", "MainPID": 0, "ControlPID": 0, "Job": [0, "/"], "ControlGroup": ""}
         self.bus = Bus({"old.service": {**stopped, "LoadState": "masked", "UnitFileState": "masked"},
             "guarded.service": {**stopped, "LoadState": "loaded", "UnitFileState": "disabled", "NeedDaemonReload": False,
+                "Type": "exec", "KillMode": "control-group", "Restart": "no",
                 "ExecStart": [[sys.executable, [sys.executable, "-B", "-m", "admin.local_hand_system_manager.resident_service",
                                                "--config", str(self.config)], False]],
                 "Environment": ["PYTHONPATH=" + str(Path(bootstrap.__file__).parents[2])]}})
@@ -263,6 +266,70 @@ class BootstrapTests(unittest.TestCase):
         self.bus.units["guarded.service"]["Environment"] = ["PYTHONPATH=/other/legacy/tree"]
         with self.assertRaises(DeployError): self.plan()
 
+    def test_separate_wheel_and_pinned_interpreter_use_exact_ordered_import_path(self):
+        config = bootstrap._read(self.candidate, self.uid)
+        runtime = str(self.root / "wheel")
+        interpreter = str(self.root / "copied-python")
+        config["installation"]["installed"].update(package_root=runtime, programs={"python": {"path": interpreter}})
+        self.write(self.candidate, config)
+        self.target["selection"]["members"][0]["sha256"] = hashlib.sha256(self.candidate.read_bytes()).hexdigest()
+        self.target["selection"]["components"]["manager"]["configuration_digest"] = maintenance.digest(
+            {key: value for key, value in config.items() if key != "maintenance"})
+        value = self.bus.units["guarded.service"]
+        value["ExecStart"][0][0] = interpreter
+        value["ExecStart"][0][1][0] = interpreter
+        admin = str(Path(bootstrap.__file__).parents[2])
+        value["Environment"] = ["PYTHONPATH=" + runtime + os.pathsep + admin]
+        plan = self.plan()
+        value["Environment"] = ["PYTHONPATH=" + admin + os.pathsep + runtime]
+        failed = self.adopt(plan)
+        self.assertFalse(failed["released"])
+        self.assertFalse(self.config.exists())
+        value["Environment"] = ["PYTHONPATH=" + runtime + os.pathsep + admin]
+        self.assertTrue(self.adopt(plan)["released"])
+
+    def test_declared_readonly_hook_imports_with_stopped_dependency_without_running_it(self):
+        hook = [sys.executable, [sys.executable, "-B", "-m",
+            "admin.local_hand_system_manager.resident_service", "--config", str(self.config), "--check-host"], False]
+        value = self.bus.units["guarded.service"]
+        value.update(ExecStartPre=[hook + [0, 0, 0, 0, 0, 0, 0]], Requires=["resources.service"],
+                     After=["resources.service"])
+        spec = self.profile["systemd"]["units"]["guarded.service"]
+        spec.update(hooks={"ExecStartPre": [hook]}, read_only_dependencies=["resources.service"])
+        before = copy.deepcopy(self.bus.units)
+        operation = self.adopt(self.plan())
+        self.assertTrue(operation["released"])
+        self.assertEqual(before, self.bus.units)
+        self.assertEqual("inactive", self.bus.unit("resources.service")["ActiveState"])
+
+    def test_undeclared_hook_refuses_before_config_publication(self):
+        self.bus.units["guarded.service"]["ExecStartPre"] = [["/bin/true", ["/bin/true"], False]]
+        with self.assertRaisesRegex(RuntimeError, "UNDECLARED_SERVICE_HOOK"):
+            self.plan()
+        self.assertFalse(self.config.exists())
+
+    def test_declared_hook_drift_is_rejected_when_adopting_original_plan(self):
+        hook = ["/bin/true", ["/bin/true"], False]
+        self.bus.units["guarded.service"]["ExecStartPre"] = [hook]
+        self.profile["systemd"]["units"]["guarded.service"]["hooks"] = {"ExecStartPre": [copy.deepcopy(hook)]}
+        plan = self.plan()
+        self.bus.units["guarded.service"]["ExecStartPre"][0][1].append("changed")
+        failed = self.adopt(plan)
+        self.assertFalse(failed["released"])
+        self.assertFalse(self.config.exists())
+
+    def test_offline_import_rejects_unsupported_service_effects(self):
+        original = copy.deepcopy(self.bus.units["guarded.service"])
+        for change, error in (({"Requires": ["outside.service"]}, "UNDECLARED_SERVICE_DEPENDENCY"),
+                              ({"PartOf": ["outside.service"]}, "UNDECLARED_SERVICE_PROPAGATION"),
+                              ({"Restart": "always"}, "UNGUARDED_SERVICE_RESTART"),
+                              ({"KillMode": "process"}, "UNSUPPORTED_SERVICE_TYPE")):
+            with self.subTest(change=change):
+                self.bus.units["guarded.service"] = {**original, **change}
+                with self.assertRaisesRegex(RuntimeError, error):
+                    self.plan()
+                self.assertFalse(self.config.exists())
+
     def test_existing_unguarded_configuration_cannot_be_import_rollback_baseline(self):
         self.write(self.config, self.old)
         with self.assertRaisesRegex(DeployError, "initially absent"): self.plan()
@@ -372,6 +439,97 @@ class BootstrapTests(unittest.TestCase):
         self.assertEqual(self.old, bootstrap._read(self.legacy_config, self.uid))
         self.assertFalse(self.config.exists())
         self.assertEqual("BOOTSTRAP_CHANGED", operation["errors"]["primary"][-1]["code"])
+
+
+class InstalledLayoutTests(unittest.TestCase):
+    """Real separate file trees; no interpreter or service is executed."""
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.source, self.wheel = self.root / "projection", self.root / "wheel"
+        for package in bootstrap.provenance.PAYLOAD_PACKAGES:
+            for root in (self.source / "tools", self.wheel):
+                path = root / package
+                path.mkdir(parents=True)
+                (path / "__init__.py").write_bytes(b"# selected module\n")
+        for root in (self.source / "tools", self.wheel):
+            (root / "local_hand/worker.py").write_bytes(b"# selected worker\n")
+        (self.wheel / "local_hand/bootstrap_linux.sh").write_bytes(b"# wheel asset\n")
+        self.python = self.root / "python"
+        self.python.write_bytes(b"selected interpreter fixture")
+        for path in self.root.rglob("*"):
+            path.chmod(0o755 if path.is_dir() else 0o644)
+        self.identity = {"source_commit": "a" * 40, "source_tree": "b" * 40}
+        self.installation = {"source": {"root": str(self.source), "commit": "a" * 40, "tree": "b" * 40},
+            "installed": {"package_root": str(self.wheel),
+                "payload_digest": bootstrap.provenance.full_payload_digest(self.wheel),
+                "programs": {"python": {"path": str(self.python), "sha256": hashlib.sha256(self.python.read_bytes()).hexdigest()}}}}
+        self.metadata = {"schema_version": bootstrap.provenance.BUILD_SCHEMA,
+            "product_version": bootstrap.provenance.VERSION, "artifact_kind": "wheel", "source_commit": "a" * 40,
+            "files": bootstrap.provenance.payload_hashes(self.wheel)}
+        self.metadata_path = self.wheel / "local_hand" / bootstrap.provenance.METADATA_NAME
+        self.metadata_path.write_bytes(startup.canonical(self.metadata))
+        self.metadata_path.chmod(0o644)
+
+    def verify(self):
+        return bootstrap.verify_installed_layout(self.installation,
+            self.installation["installed"]["payload_digest"], source_root=self.source,
+            source_identity=self.identity, owner=os.geteuid())
+
+    def test_complete_wheel_is_bound_without_requiring_projection_payload_digest(self):
+        self.assertNotEqual(bootstrap.provenance.full_payload_digest(self.source / "tools"),
+                            self.installation["installed"]["payload_digest"])
+        self.verify()
+
+    def test_same_python_with_wrong_source_commit_or_root_is_rejected(self):
+        original = copy.deepcopy(self.installation)
+        for key, value in (("commit", "c" * 40), ("tree", "d" * 40), ("root", str(self.root))):
+            with self.subTest(key=key):
+                self.installation = copy.deepcopy(original)
+                self.installation["source"][key] = value
+                with self.assertRaisesRegex(DeployError, "same verified source"):
+                    self.verify()
+
+    def test_wheel_metadata_cannot_claim_another_commit_or_hide_an_asset(self):
+        original = copy.deepcopy(self.metadata)
+        for change in ({"source_commit": "c" * 40}, {"artifact_kind": "source-staging"}, {"files": {}}):
+            with self.subTest(change=change):
+                self.metadata_path.write_bytes(startup.canonical({**original, **change}))
+                with self.assertRaisesRegex(DeployError, "complete wheel metadata"):
+                    self.verify()
+
+    def test_wheel_code_must_match_selected_administrator_source(self):
+        (self.source / "tools/local_hand/__init__.py").write_bytes(b"# other source\n")
+        with self.assertRaisesRegex(DeployError, "Python differs"):
+            self.verify()
+
+    def test_changed_interpreter_or_runtime_bytes_are_rejected(self):
+        self.python.write_bytes(b"other interpreter")
+        with self.assertRaisesRegex(DeployError, "interpreter changed"):
+            self.verify()
+        self.python.write_bytes(b"selected interpreter fixture")
+        (self.wheel / "local_hand/bootstrap_linux.sh").write_bytes(b"changed asset")
+        with self.assertRaisesRegex(DeployError, "installed bytes"):
+            self.verify()
+
+    def test_declared_network_venv_keeps_task_interpreter_separate(self):
+        network = self.root / "network-python"
+        network.write_bytes(self.python.read_bytes()); network.chmod(0o755)
+        task = copy.deepcopy(self.installation["installed"]["programs"]["python"])
+        selected = {"path": str(network), "sha256": task["sha256"]}
+        spec = {"mcp_python": selected}
+        self.assertEqual(selected, bootstrap.entry_program(spec, "mcp", self.installation, os.geteuid()))
+        self.assertEqual(task, self.installation["installed"]["programs"]["python"])
+        self.assertEqual(task, bootstrap.entry_program({}, "resident", self.installation, os.geteuid()))
+        with self.assertRaisesRegex(DeployError, "same Python bytes"):
+            bootstrap.entry_program(spec, "resident", self.installation, os.geteuid())
+        network.write_bytes(b"different executable")
+        with self.assertRaisesRegex(DeployError, "MCP interpreter changed"):
+            bootstrap.entry_program(spec, "mcp", self.installation, os.geteuid())
+        spec["mcp_python"]["sha256"] = hashlib.sha256(network.read_bytes()).hexdigest()
+        with self.assertRaisesRegex(DeployError, "same Python bytes"):
+            bootstrap.entry_program(spec, "mcp", self.installation, os.geteuid())
 
 
 if __name__ == "__main__": unittest.main()

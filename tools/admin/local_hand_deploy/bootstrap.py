@@ -22,7 +22,6 @@ import os
 from pathlib import Path
 import re
 import stat
-import sys
 import time
 
 from local_hand_jobs import startup
@@ -34,7 +33,7 @@ from . import files
 from .model import DeployError, PLAN_SCHEMA, canonical, decode, digest, identity, operation_id, seal_plan, validate_plan
 from .planner import _path, _selection, validate_profile
 from .runtime import PlanningEnvironment
-from .services import UNIT, HOOKS, definition_digest
+from .services import UNIT
 from .systemd_bus import SystemdBus
 
 
@@ -84,6 +83,59 @@ def _children(path, limit):
 def _directory(path, owner):
     fd = startup._protected_directory(path, owner_uid=owner)
     os.close(fd)
+
+
+def verify_installed_layout(installation, expected, *, source_root, source_identity, owner):
+    """Bind the runtime wheel and administrator projection without conflating them.
+
+    The projection intentionally omits non-Python wheel assets. Comparing its
+    payload digest to a complete wheel rejects an otherwise valid installation.
+    Both trees must instead name the same verified source, and every runtime
+    Python module must match that source. No candidate module is imported here.
+    """
+    source, installed = installation["source"], installation["installed"]
+    root = Path(_path(installed["package_root"]))
+    if (source["root"] != str(source_root) or source["commit"] != source_identity["source_commit"]
+            or source["tree"] != source_identity["source_tree"]
+            or installed["payload_digest"] != expected):
+        _fail("BOOTSTRAP_GUARD", "Runtime and administrator must select the same verified source")
+    _directory(root, owner)
+    actual = provenance.full_payload_digest(root)
+    if actual != expected:
+        _fail("BOOTSTRAP_GUARD", "Selected runtime payload differs from its installed bytes")
+    if root != source_root / "tools":
+        metadata = _read(str(root / "local_hand" / provenance.METADATA_NAME), owner, 256 * 1024)
+        hashes = provenance.payload_hashes(root)
+        if (set(metadata) != {"schema_version", "product_version", "source_commit", "artifact_kind", "files"}
+                or metadata["schema_version"] != provenance.BUILD_SCHEMA
+                or metadata["product_version"] != provenance.VERSION
+                or metadata["artifact_kind"] != "wheel" or metadata["source_commit"] != source["commit"]
+                or metadata["files"] != hashes):
+            _fail("BOOTSTRAP_GUARD", "Installed runtime lacks matching complete wheel metadata")
+        for name, checksum in hashes.items():
+            if name.endswith(".py"):
+                raw = startup.protected_read(source_root / "tools" / name, owner_uid=owner, maximum=16 * 1024 * 1024)
+                if hashlib.sha256(raw).hexdigest() != checksum:
+                    _fail("BOOTSTRAP_GUARD", "Runtime Python differs from the selected administrator source")
+    program = installed["programs"]["python"]
+    raw = startup.protected_read(_path(program["path"]), owner_uid=owner, maximum=64 * 1024 * 1024)
+    if hashlib.sha256(raw).hexdigest() != program["sha256"]:
+        _fail("BOOTSTRAP_GUARD", "Selected runtime interpreter changed")
+
+
+def entry_program(spec, kind, installation, owner):
+    """A network-only venv may supply SDK dependencies, never task execution."""
+    task = installation["installed"]["programs"]["python"]
+    if "mcp_python" not in spec:
+        return task
+    program = spec["mcp_python"]
+    if (kind != "mcp" or not isinstance(program, dict) or set(program) != {"path", "sha256"}
+            or program["sha256"] != task["sha256"]):
+        _fail("BOOTSTRAP_GUARD", "MCP interpreter must explicitly bind the same Python bytes as the task runtime")
+    raw = startup.protected_read(_path(program["path"]), owner_uid=owner, maximum=64 * 1024 * 1024)
+    if hashlib.sha256(raw).hexdigest() != program["sha256"]:
+        _fail("BOOTSTRAP_GUARD", "Selected MCP interpreter changed")
+    return program
 
 
 def _legacy(specifications, owner):
@@ -358,14 +410,32 @@ class OfflineObserver:
                                     launch["controller_envelope"]["controller"].get("boot_id"))
         return {"records": records, "attempts": attempts, "digest": digest(fingerprints)}
 
+    def entry_installation(self, component, candidates=None):
+        candidates = candidates or {}
+        def read(name):
+            path = self.profile["guarded_components"][name]["configuration"]
+            return _read(candidates.get(path, path), self.owner, 2 * 1024 * 1024)
+        config = read(component)
+        if self.profile["probes"][component]["kind"] == "mcp":
+            managers = [name for name, probe in self.profile["probes"].items()
+                        if probe["kind"] in {"resident", "prepared"} and probe["socket"] == config.get("manager_socket")]
+            if len(managers) != 1:
+                _fail("BOOTSTRAP_GUARD", "MCP needs one explicitly selected manager installation")
+            config = read(managers[0])
+        return config["installation"]
+
     def verify_target(self, target, candidates=None):
         self.environment._verify_components(target["selection"], candidates)
-        # Bootstrap imports the selected administrator/runtime projection. A
-        # unit pointing to an older unguarded Python import tree is not adopted.
-        actual = provenance.full_payload_digest(Path(__file__).parents[2])
-        if any(component["payload_digest"] != actual for name, component in target["selection"]["components"].items()
-               if self.profile["probes"][name]["kind"] != "gateway"):
-            _fail("BOOTSTRAP_GUARD", "Compatibility payload is not this selected guarded implementation")
+        from .identity import implementation_identity
+        selected_source = implementation_identity()
+        for name, component in target["selection"]["components"].items():
+            if self.profile["probes"][name]["kind"] != "gateway":
+                installation = self.entry_installation(name, candidates)
+                verify_installed_layout(installation, component["payload_digest"],
+                    source_root=Path(__file__).parents[3], source_identity=selected_source, owner=self.owner)
+                for spec in self.profile.get("systemd", {}).get("units", {}).values():
+                    if spec["component"] == name:
+                        entry_program(spec, self.profile["probes"][name]["kind"], installation, self.owner)
 
     def retention(self, target, entries, candidates=None):
         """Verify the original data using the admitted, stopped new reader."""
@@ -405,7 +475,7 @@ class OfflineObserver:
             _fail("BOOTSTRAP_RETENTION", "Compatibility routes omit an originally dispatched task")
         return {"preparations": preparations, "results": results}
 
-    def observe(self, entries, target):
+    def observe(self, entries, target, candidates=None):
         self.deadline = time.monotonic() + self.profile.get("timeout_seconds", 30)
         originals = [{key: entry[key] for key in ("kind", "unit", "configuration") if key in entry}
                      for entry in entries]
@@ -437,17 +507,33 @@ class OfflineObserver:
                 flag = "--startup-config" if kind == "mcp" else "--config"
                 module = {"resident": "admin.local_hand_system_manager.resident_service",
                           "prepared": "admin.local_hand_system_manager.prepared_service", "mcp": "local_hand_mcp.server"}.get(kind)
+                installation = self.entry_installation(component, candidates)
+                interpreter = entry_program(self.profile["systemd"]["units"][unit], kind,
+                                            installation, self.owner)["path"]
+                runtime = installation["installed"]["package_root"]
+                admin = str(Path(__file__).parents[2])
+                if any(os.pathsep in path for path in (runtime, admin)):
+                    _fail("BOOTSTRAP_GUARD", "Selected import roots cannot expand into additional search paths")
+                import_path = runtime if runtime == admin else runtime + os.pathsep + admin
                 if (module is None or "-m" not in args or args[args.index("-m") + 1:args.index("-m") + 2] != [module]
                         or flag not in args or args[args.index(flag) + 1:args.index(flag) + 2] != [guard]
-                        or Path(commands[0][0]).resolve() != Path(sys.executable).resolve()
-                        or "PYTHONPATH=" + str(Path(__file__).parents[2]) not in value.get("Environment", [])
+                        or commands[0][0] != interpreter or args[0] != interpreter
+                        or [item for item in value.get("Environment", []) if item.startswith("PYTHONPATH=")] != ["PYTHONPATH=" + import_path]
                         or not ("-B" in args or "PYTHONDONTWRITEBYTECODE=1" in value.get("Environment", []))
                         or any(flag in args[:args.index("-m")] for flag in ("-I", "-E", "-c"))
-                        or any(value.get(hook) for hook in HOOKS)
                         or value.get("WorkingDirectory", "") not in {"", "/"}
                         or any(item.startswith("PYTHONHOME=") for item in value.get("Environment", []))):
                     _fail("BOOTSTRAP_GUARD", "Actual guarded entry must load its exact selected configuration")
-                observed[unit] = {"definition_digest": definition_digest(value), "policy": value["UnitFileState"]}
+                # Import and subsequent deployment must admit the same fixed
+                # service definition. In particular a declared read-only
+                # readiness hook is not an unguarded entry. This is observation
+                # only: stopped dependencies need not run until service_start.
+                snapshot = self.environment.services._snapshot(bus, unit)
+                if (snapshot["active"] not in {"inactive", "failed"} or snapshot["pid"]
+                        or snapshot["job"][0] or snapshot["needs_reload"]
+                        or snapshot["policy"] != desired["policy"]):
+                    _fail("BOOTSTRAP_CHANGED", "Guarded definition changed during offline observation")
+                observed[unit] = {"definition_digest": snapshot["definition_digest"], "policy": snapshot["policy"]}
             managed = {item["component"] for item in self.profile.get("systemd", {}).get("units", {}).values()}
             if self.profile.get("gateway"):
                 gateway = self.environment.gateway.observe()
@@ -499,7 +585,7 @@ def build_bootstrap_plan(manifest, observer=None):
     candidates = {entry["target"]: entry["source"]["path"] for entry in file_plan["files"]}
     observer.verify_target(target, candidates)
     with legacy_locks(entries, owner) as bindings:
-        observation = observer.observe(entries, target)
+        observation = observer.observe(entries, target, candidates)
         retained = observer.retention(target, entries, candidates)
     bootstrap = {"schema": MANIFEST_SCHEMA, "entries": entries, "locks": bindings,
                  "observation": observation, "retained": retained}
@@ -541,10 +627,11 @@ def _adopt_bootstrap(store, plan, *, observer=None, implementation=None):
         if operation["direction"] != "APPLY":
             return _rollback_locked(store, operation, observer)
         with legacy_locks(binding["entries"], owner, binding["locks"]):
-            observation = observer.observe(binding["entries"], target)
+            candidates = {step["action"]["target"]: step["action"]["source"]["path"] for step in plan["steps"]}
+            observer.verify_target(target, candidates)
+            observation = observer.observe(binding["entries"], target, candidates)
             if observation != binding["observation"]:
                 _fail("BOOTSTRAP_CHANGED", "Old duties or guarded definitions changed since the offline plan")
-            candidates = {step["action"]["target"]: step["action"]["source"]["path"] for step in plan["steps"]}
             retained = observer.retention(target, binding["entries"], candidates)
             if "retained" not in binding or retained != binding["retained"]:
                 _fail("BOOTSTRAP_RETENTION", "Original data differs from the read-only import plan")
@@ -611,7 +698,8 @@ def _rollback_locked(store, operation, observer):
     if operation["decision"] == "COMMITTED":
         _fail("BOOTSTRAP_COMPATIBILITY_BASELINE", "A committed guarded import cannot roll back to an unguarded release")
     with legacy_locks(binding["entries"], profile.get("owner_uid", 0), binding["locks"]):
-        if observer.observe(binding["entries"], plan["target"]) != binding["observation"]:
+        candidates = {step["action"]["target"]: step["action"]["source"]["path"] for step in plan["steps"]}
+        if observer.observe(binding["entries"], plan["target"], candidates) != binding["observation"]:
             _fail("BOOTSTRAP_CHANGED", "Original closed sources changed before isolated compensation")
         operation.update(direction="ROLLBACK", phase="BOOTSTRAP_RESTORING")
         store.save(operation, "BOOTSTRAP_ROLLBACK_INTENT", recovery=True)

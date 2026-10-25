@@ -195,8 +195,14 @@ socket 父目录须预先存在且受保护，目录须以相同路径只读挂�
    未完成状态。旧宿主开机身份变化只证明旧进程/通道不能存活，不改写原业务结果。
 3. 新守卫服务使用**独立单元名称**，预先安装、加载并保持停止，policy 为 `disabled` 或 `static`，
    没有待重载定义。其实际 `ExecStart` 指向本次选定 Python、固定 manager/MCP 模块及独立配置路径；
-   `PYTHONPATH` 必须指本次管理员安装投影的 `tools`，使用 `-B` 或 `PYTHONDONTWRITEBYTECODE=1`。
-   不从旧未受守卫的导入树启动，也不在导入时执行单元 hook 或共享 reload。
+   服务的 `PYTHONPATH` 必须按顺序为所选完整运行 wheel 根、本次管理员投影的 `tools`；两者是同一
+   提交的分别校验载荷，不能要求 wheel 的完整摘要等于省略 shell 资源的投影摘要。管理员部署命令
+   本身仍按页首只加载管理员投影。服务使用 `-B` 或 `PYTHONDONTWRITEBYTECODE=1`。
+   manager 使用安装声明的任务 Python；MCP 若复用独立 SDK 虚拟环境，须在其
+   `systemd.units[unit].mcp_python` 明确给出 `{path, sha256}`，受保护普通文件及摘要须匹配任务
+   Python 的相同字节。此选择不改变任务执行环境，MCP 的四包代码仍优先加载所选 wheel。
+   导入与普通部署共用同一服务定义校验，允许画像准确声明的只读 readiness hook 和依赖；
+   不在导入时运行 hook、启动依赖或执行共享 reload，未声明的 hook 或传播关系仍拒绝。
 4. 每个新入口的守卫配置路径起初不存在，位于独立受保护位置。导入只发布完整选择中的配置文件，
    不覆盖旧配置、launch 声明、锁、socket、任务/输出目录或 gate/selection 控制文件；新单元定义
    本身须提前准备，不能混入配置发布动作。
