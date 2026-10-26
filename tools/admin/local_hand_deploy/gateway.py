@@ -611,8 +611,16 @@ class GatewayAdapter:
             returned = result.get('value') if result.get('status') == 'returned' else None
             if isinstance(returned, dict) and isinstance(returned.get('container_id'), str) and returned['container_id']:
                 created.add(returned['container_id'])
+        removed = False
+        removal_conflict = False
         if kind == "gateway_remove":
-            target = value["kind"] == "absent"
+            # The name can disappear because an administrator renamed the
+            # original container. Only its immutable Engine ID proves removal.
+            original_container = self.engine.request('GET', '/containers/' + _quote(action['before']['id']) + '/json', missing=True)
+            removed = original_container is None
+            target = removed and value["kind"] == "absent"
+            removal_conflict = (value['kind'] == 'container' and value['id'] != action['before']['id']
+                                or value['kind'] == 'absent' and not removed)
         elif kind == "gateway_stop":
             target = value["kind"] == "container" and value["id"] == action["before"]["id"] and value["status"] == "stopped"
         else:
@@ -648,14 +656,16 @@ class GatewayAdapter:
         # An acknowledged fixed Engine operation is synchronous at this API
         # boundary. Lost response may be adopted ONLY for its exact target; no
         # retry against original/absent state without daemon-side completion proof.
-        closed = completed or target
+        closed = completed or target or removed
         outcome = ("target" if target and closed else "unknown" if not closed else "original" if original
-                   else "conflict" if kind == 'gateway_create' or kind == 'gateway_start' and value.get('id') != start_id
+                   else "conflict" if removal_conflict or kind == 'gateway_create' or kind == 'gateway_start' and value.get('id') != start_id
                    else "partial" if value.get("status") == "stopped" else "conflict")
         observed = {"outcome": outcome, "postcondition": target and closed, "closed": closed,
                 "observation": value, "supervision": supervised,
                 "proof": "satisfied_observed" if target and not completed else "observed",
                 **({'effective': bool(created) or target} if kind == 'gateway_create' else {}),
+                **({'effective': bool(removed and self._dispatch_identity(action, events) and not not_sent)}
+                   if kind == 'gateway_remove' else {}),
                 "dispatched": bool(dispatch_recorded and not not_sent)}
         if kind == 'gateway_create' and target:
             observed['effect_identity'] = self.creation_identity(action, previous, observation=observed, lock_fd=lock_fd)

@@ -98,6 +98,83 @@ class PolicySyncTests(unittest.TestCase):
     def test_failed_unlink_sync_is_read_only_observed_then_synced_without_repeating_effect(self):
         self.check_failed_sync(remove=True)
 
+    def test_replaced_parent_cannot_supply_unlink_sync_or_compensation(self):
+        for failed in (False, True):
+            with self.subTest(failed=failed):
+                info = self.links.stat(); self.parent_identity = info.st_dev, info.st_ino
+                action = self.action(remove=True)
+                with patch('os.fsync', side_effect=self.failing_sync if failed else self.real_sync):
+                    result = self.execute(action, 'old-parent-unlink-' + str(failed))
+                self.assertEqual(not failed, result['synced'])
+                receipt = Path(result['attempt']['binding']['result_directory']) / 'result.json'
+                original_receipt = receipt.read_bytes()
+                original_parent = self.links.with_name('original-links-' + str(failed))
+                self.links.rename(original_parent)
+                self.links.mkdir(mode=0o700)
+                independent = self.links.stat()
+                with patch('os.fsync', side_effect=AssertionError('must not sync replacement parent')):
+                    observed = self.adapter.observe_action(action, result['attempt'], lock_fd=self.fd)
+                    self.assertEqual('conflict', observed['outcome'])
+                    self.assertFalse(observed['postcondition'])
+                    with self.assertRaisesRegex(AdapterError, 'CONFLICT'):
+                        self.execute(action, None, previous=result['attempt'])
+                with self.assertRaisesRegex(AdapterError, 'RESTORE_POLICY_LINK'):
+                    self.concrete().prepare_compensation(self.operation(action, result))
+                self.assertEqual([], list(self.links.iterdir()))
+                self.assertEqual([], list(original_parent.iterdir()))
+                self.assertEqual(independent.st_ino, self.links.stat().st_ino)
+                self.assertEqual(original_receipt, receipt.read_bytes())
+
+    def test_empty_parent_replacement_before_dispatch_is_not_adopted(self):
+        action = self.action()
+        original_parent = self.links.with_name('original-empty-links')
+        self.links.rename(original_parent)
+        self.links.mkdir(mode=0o700)
+        with patch('os.symlink', side_effect=AssertionError('must not write replacement parent')), \
+                self.assertRaisesRegex(AdapterError, 'CONFLICT'):
+            self.execute(action, 'replaced-parent-before-start')
+        self.assertEqual([], list(self.links.iterdir()))
+        self.assertEqual([], list(original_parent.iterdir()))
+
+    def test_same_link_object_moved_to_replacement_parent_is_not_adopted(self):
+        action = self.action()
+        result = self.execute(action, 'original-link-parent')
+        original = _link_state(self.path)
+        original_parent = self.links.with_name('original-linked-directory')
+        self.links.rename(original_parent)
+        self.links.mkdir(mode=0o700)
+        (original_parent / self.path.name).rename(self.path)
+        relocated = _link_state(self.path)
+        self.assertEqual(original['binding'], relocated['binding'])
+        self.assertNotEqual(original['parent'], relocated['parent'])
+        with patch('os.fsync', side_effect=AssertionError('must not sync replacement parent')):
+            observed = self.adapter.observe_action(action, result['attempt'], lock_fd=self.fd)
+            self.assertEqual('conflict', observed['outcome'])
+            with self.assertRaisesRegex(AdapterError, 'CONFLICT'):
+                self.execute(action, None, previous=result['attempt'])
+        with self.assertRaisesRegex(AdapterError, 'RESTORE_POLICY_LINK'):
+            self.concrete().prepare_compensation(self.operation(action, result))
+        self.assertEqual(relocated, _link_state(self.path))
+
+    def test_parent_changed_between_unlink_and_receipt_is_not_rebound(self):
+        action = self.action(remove=True)
+        original_parent = self.links.with_name('original-inflight-directory')
+        unlink = os.unlink
+        events = []
+        def replace_parent(name, **kwargs):
+            unlink(name, **kwargs)
+            self.links.rename(original_parent)
+            self.links.mkdir(mode=0o700)
+        with patch('os.unlink', side_effect=replace_parent), \
+                patch('os.fsync', side_effect=AssertionError('must not sync replacement parent')), \
+                self.assertRaisesRegex(AdapterError, 'ENABLE_LINK_CHANGED'):
+            self.adapter._perform(action, events.append)
+        self.assertEqual([{'kind': 'policy_link_effect', 'link': {
+            'kind': 'absent', 'parent': action['before']['parent']}}], events)
+        self.assertNotEqual(events[0]['link']['parent'], _link_state(self.path)['parent'])
+        self.assertEqual([], list(self.links.iterdir()))
+        self.assertEqual([], list(original_parent.iterdir()))
+
     def replace_independently(self):
         original = _link_state(self.path)
         other = self.links / 'independent'
@@ -163,9 +240,10 @@ class PolicySyncTests(unittest.TestCase):
         self.assertTrue(self.execute(correction, 'explicit-correction')['postcondition'])
         self.assertEqual(original_receipt, receipt_path.read_bytes())
 
-    def test_historical_successful_removal_still_proves_synchronized_absence(self):
+    def test_historical_removal_without_original_parent_cannot_claim_absence(self):
         action = self.action(remove=True)
         action['before'].pop('binding')
+        action['before'].pop('parent')
         def old_remove(action, emit):
             os.unlink(action['path'])
             directory = os.open(self.links, os.O_RDONLY | os.O_DIRECTORY)
@@ -176,20 +254,26 @@ class PolicySyncTests(unittest.TestCase):
             return {'link': {'kind': 'absent'}}
         result = self.adapter.runner.run(action, old_remove, attempt_id='historical-remove',
             lock_fd=self.fd, persist_intent=lambda _: None)
-        with patch('os.fsync', side_effect=AssertionError('already synchronized')):
-            resumed = self.execute(action, None, previous=result)
-        self.assertTrue(resumed['postcondition'])
-        self.assertTrue(resumed['synced'])
+        original_receipt = (Path(result['binding']['result_directory']) / 'result.json').read_bytes()
+        with patch('os.fsync', side_effect=AssertionError('old parent is unproven')):
+            observed = self.adapter.observe_action(action, result, lock_fd=self.fd)
+            self.assertTrue(observed['closed'])
+            self.assertTrue(observed['effective'])
+            self.assertEqual('conflict', observed['outcome'])
+            self.assertFalse(observed['synced'])
+            with self.assertRaisesRegex(AdapterError, 'CONFLICT'):
+                self.execute(action, None, previous=result)
+        self.assertEqual(original_receipt, (Path(result['binding']['result_directory']) / 'result.json').read_bytes())
 
     def test_recorded_effect_with_wrong_after_value_is_not_replayed_as_original(self):
         action = self.action()
         symlink = os.symlink
-        def independently_remove(target, path):
-            symlink(target, path)
-            os.unlink(path)
+        def independently_remove(target, path, **kwargs):
+            symlink(target, path, **kwargs)
+            os.unlink(path, dir_fd=kwargs.get('dir_fd'))
         with patch('os.symlink', side_effect=independently_remove):
             result = self.execute(action, 'after-value-conflict')
-        self.assertEqual({'kind': 'absent'}, _link_state(self.path))
+        self.assertEqual(action['before'], _link_state(self.path))
         self.assertEqual('conflict', result['outcome'])
         self.assertTrue(result['effective'])
         self.assertFalse(result['postcondition'])
@@ -292,12 +376,12 @@ class PolicySyncTests(unittest.TestCase):
         self.assertEqual(owned, actions[0]['prepared']['before'])
         restored = self.execute(actions[0]['prepared'], 'owned-restoration')
         self.assertTrue(restored['postcondition'])
-        self.assertEqual({'kind': 'absent'}, _link_state(self.path))
+        self.assertEqual(action['before'], _link_state(self.path))
 
     def test_inherited_compensation_preserves_latest_identity_and_pending_sync(self):
         original = self.action(remove=True)
         removed = self.execute(original, 'forward-remove')
-        restore = {**original, 'before': {'kind': 'absent'},
+        restore = {**original, 'before': _link_state(self.path),
                    'after': {'kind': 'link', 'target': '/fixture/unit.service'}}
         with patch('os.fsync', side_effect=self.failing_sync):
             restored = self.execute(restore, 'restore-create')
@@ -387,7 +471,7 @@ class PolicySyncTests(unittest.TestCase):
     def test_covered_earlier_link_step_cannot_bypass_later_pending_sync(self):
         remove = self.action(remove=True)
         coordinator, store, environment, plan = self.coordinator(remove)
-        create = {**remove, 'before': {'kind': 'absent'},
+        create = {**remove, 'before': {'kind': 'absent', 'parent': remove['before']['parent']},
                   'after': {'kind': 'link', 'target': '/fixture/unit.service'}}
         plan.pop('digest')
         plan['steps'].append({'id': 'create', 'kind': 'service', 'action': create})
@@ -442,7 +526,7 @@ class PolicySyncTests(unittest.TestCase):
             interrupted = coordinator.rollback(applied['id'])
         self.assertIsNone(interrupted['decision'])
         self.assertNotEqual('RESTORED', interrupted['compensation'][0]['record']['state'])
-        self.assertEqual({'kind': 'absent'}, _link_state(self.path))
+        self.assertEqual(plan['steps'][0]['action']['before'], _link_state(self.path))
         environment.check_ok = True
         with patch('os.unlink', side_effect=AssertionError('must not unlink again')):
             final = coordinator.resume(applied['id'])

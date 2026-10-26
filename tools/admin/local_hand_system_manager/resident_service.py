@@ -22,6 +22,7 @@ import subprocess
 import threading
 import time
 import uuid
+import weakref
 
 from local_hand_jobs import budget, cli, forwarded_bounds, maintenance, quota_contract as q
 from local_hand_jobs.contract import DISABLED_JOB_KINDS, JobError, Principal, MAX_WORKSPACE_TEXT_BYTES, canonical_bytes, strict_loads, validate_tool_args
@@ -48,6 +49,14 @@ def publish(path, value, mode=0o600, *, publication=None):
             publication['directory']=os.dup(directory)
             publication['file']=os.open(name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK|os.O_CLOEXEC,
                                         dir_fd=directory)
+            publication['temporary']=name
+            try:
+                publication['previous']=os.open(path.name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK|os.O_CLOEXEC,
+                                                dir_fd=directory)
+            except FileNotFoundError:publication['previous']=None
+            if publication['previous'] is not None:
+                publication['previous_identity']=file_identity(os.fstat(publication['previous']))
+            publication['rename_attempted']=True
         os.rename(name, path.name, src_dir_fd=directory, dst_dir_fd=directory)
         os.fsync(directory)
     finally:os.close(directory)
@@ -56,6 +65,44 @@ def publish(path, value, mode=0o600, *, publication=None):
 class ReadyPublicationUncertain(JobError):
     def __init__(self):
         super().__init__('IO_UNCERTAIN','Original preparation publication needs confirmation')
+
+
+def save_ready_failure(directory, failure):
+    """Retain each distinct pending-publication error without growing on polls."""
+    expected=q._canonical(failure,2*1024**2)+b'\n'
+    original='preparation-failure.json'
+    for name in (original,'preparation-failure-'+hashlib.sha256(expected).hexdigest()+'.json'):
+        try:task_service.save(directory,name,failure)
+        except FileExistsError:
+            fd=os.open(name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK|os.O_CLOEXEC,dir_fd=directory)
+            try:
+                info=os.fstat(fd);before=file_identity(info)
+                q.require(stat.S_ISREG(info.st_mode) and info.st_nlink==1 and info.st_size<=2*1024**2,
+                          'RESIDENT_FAILURE_RECORD_FILE')
+                raw=read_fd(fd,2*1024**2)
+                q.require(file_identity(os.fstat(fd))==before
+                          and file_identity(os.stat(name,dir_fd=directory,follow_symlinks=False))==before,
+                          'RESIDENT_FAILURE_RECORD_CHANGED')
+                if raw==expected:
+                    os.fsync(fd);os.fsync(directory)
+                    q.require(file_identity(os.fstat(fd))==before
+                              and file_identity(os.stat(name,dir_fd=directory,follow_symlinks=False))==before,
+                              'RESIDENT_FAILURE_RECORD_CHANGED')
+                    return
+                q.require(name==original,'RESIDENT_FAILURE_RECORD_CONFLICT')
+            finally:os.close(fd)
+        else:return
+
+
+def close_publication(publication):
+    for key in ('file','previous','directory'):
+        fd=publication.pop(key,None)
+        if fd is not None:os.close(fd)
+
+
+def close_pending_publications(pending):
+    for _,publication in pending.values():close_publication(publication)
+    pending.clear()
 
 
 def confirm_publication(path, value, publication, *, expected_bytes=None):
@@ -79,6 +126,32 @@ def confirm_publication(path, value, publication, *, expected_bytes=None):
     q.require(identity(Path(path).parent.stat(follow_symlinks=False))==identity(parent)
               and identity(os.stat(Path(path).name,dir_fd=directory,follow_symlinks=False))==identity(original),
               'RESIDENT_PUBLICATION_CHANGED')
+
+
+def resume_publication(path, value, publication):
+    """Retry the original rename only if both of its operands are still pinned."""
+    path=Path(path);directory=publication['directory'];candidate=os.fstat(publication['file'])
+    def identity(info):return info.st_dev,info.st_ino
+    def current():
+        try:return os.stat(path.name,dir_fd=directory,follow_symlinks=False)
+        except FileNotFoundError:return None
+    observed=current()
+    if observed is None or identity(observed)!=identity(candidate):
+        def check_previous():
+            previous=publication['previous'];observed=current()
+            if previous is None:
+                q.require(observed is None,'RESIDENT_PUBLICATION_PREVIOUS')
+            else:
+                q.require(observed is not None and identity(observed)==identity(os.fstat(previous))
+                          and file_identity(observed)==publication['previous_identity'],
+                          'RESIDENT_PUBLICATION_PREVIOUS')
+        check_previous()
+        # A failed rename may have had no effect. Reuse its exact staged file;
+        # a missing/replaced name or changed parent remains unresolved.
+        confirm_publication(path.with_name(publication['temporary']),value,publication)
+        check_previous()
+        os.rename(publication['temporary'],path.name,src_dir_fd=directory,dst_dir_fd=directory)
+    confirm_publication(path,value,publication)
 
 
 def load_current(path):
@@ -139,6 +212,11 @@ class ResidentService:
                                 if self.maintenance_gate is not None else None)
         self.protocol_ready=False
         self.records={}
+        # At most one pending publication per retained task; each owns at most
+        # three FDs. Confirmation/close releases them, with GC as a fallback for
+        # callers that abandon a service after an exception.
+        self._pending_ready={}
+        self._pending_cleanup=weakref.finalize(self,close_pending_publications,self._pending_ready)
         for path in sorted(self.root.glob('*/current.json')):
             record=load_current(path)
             operation=record['operation_id']
@@ -149,6 +227,9 @@ class ResidentService:
         # interrupted after its commit but before replacing this derived view.
         for record in self.records.values():
             self._catalog(record)
+
+    def close(self):
+        with self.fence:self._pending_cleanup()
 
     def recover_undispatched(self):
         """Called only after acquiring the exclusive original service lock.
@@ -255,14 +336,19 @@ class ResidentService:
         publish(self.catalog/(record['operation_id']+'.json'),public,0o644)
 
     def _save(self, record):
+        q.require(self._pending_cleanup.alive,'RESIDENT_CLOSED')
+        if record['operation_id'] in self._pending_ready:raise ReadyPublicationUncertain()
         path=self.root/record['operation_id']/'current.json'
         publication={} if record['state']=='READY' else None
+        retained=False
         try:
             try:publish(path,record,publication=publication)
             except OSError as error:
-                if publication is not None and 'file' in publication:
+                if publication is not None and publication.get('rename_attempted'):
                     try:confirm_publication(path,record,publication)
                     except (OSError,ValueError) as confirmation:
+                        self._pending_ready[record['operation_id']]=(copy.deepcopy(record),publication)
+                        retained=True
                         uncertain=ReadyPublicationUncertain()
                         uncertain.add_note('Original publication failure: '+type(error).__name__+': '+str(error)[:2048])
                         uncertain.add_note('READY confirmation failed: '+type(confirmation).__name__+': '+str(confirmation)[:2048])
@@ -272,10 +358,25 @@ class ResidentService:
                     self.records[record['operation_id']]=record
                 raise
         finally:
-            if publication is not None:
-                for fd in publication.values():os.close(fd)
+            if publication is not None and not retained:close_publication(publication)
         self.records[record['operation_id']]=record
         self._catalog(record)
+
+    def _resume_ready(self, record):
+        ready,publication=self._pending_ready[record['operation_id']]
+        try:
+            q.require(all(record[key]==ready[key] for key in ('operation_id','principal_id','attempt')),
+                      'RESIDENT_PUBLICATION_TASK')
+            resume_publication(self.root/record['operation_id']/'current.json',ready,publication)
+        except (OSError,ValueError) as error:
+            uncertain=ReadyPublicationUncertain()
+            uncertain.add_note('Original READY publication confirmation failed: '+type(error).__name__+': '+str(error)[:2048])
+            raise uncertain from error
+        self.records[record['operation_id']]=ready
+        del self._pending_ready[record['operation_id']]
+        close_publication(publication)
+        self._catalog(ready)
+        return ready
 
     def _owned(self, operation, principal):
         record=self.records.get(operation)
@@ -424,8 +525,9 @@ class ResidentService:
                         return dict(operation_id=operation,state='PREPARING')
                     # After restart, recover a completed preparation or retain
                     # its failure. Neither path submits any business operation.
-                    if self._preparation_active(record):return dict(operation_id=operation,state='PREPARING')
-                    if (Path(record['attempt'])/'result.json').exists():
+                    if operation not in self._pending_ready and self._preparation_active(record):
+                        return dict(operation_id=operation,state='PREPARING')
+                    if operation in self._pending_ready or (Path(record['attempt'])/'result.json').exists():
                         try:record=self._ready(record)
                         except Exception as error:record=self._preparation_failed(record,error)
                     else:
@@ -508,6 +610,7 @@ class ResidentService:
             return dict(operation_id=operation,state='PREPARING')
 
     def _ready(self, record):
+        if record['operation_id'] in self._pending_ready:return self._resume_ready(record)
         prepared=load(Path(record['attempt'])/'result.json')
         launch=prepared['launch'];request=launch['request']
         q.require(request['operation_id']==record['operation_id'] and launch['principal_id']==record['principal_id'],
@@ -644,9 +747,11 @@ class ResidentService:
         failure=dict(type=type(error).__name__,message=str(error)[:2048])
         if getattr(error,'__notes__',None):failure['notes']=[str(note)[:2048] for note in error.__notes__[:8]]
         try:
-            try:task_service.save(directory,'preparation-failure.json',failure)
-            except FileExistsError:
-                task_service.save(directory,'preparation-failure-'+uuid.uuid4().hex+'.json',failure)
+            if isinstance(error,ReadyPublicationUncertain):save_ready_failure(directory,failure)
+            else:
+                try:task_service.save(directory,'preparation-failure.json',failure)
+                except FileExistsError:
+                    task_service.save(directory,'preparation-failure-'+uuid.uuid4().hex+'.json',failure)
         finally:os.close(directory)
         if isinstance(error,ReadyPublicationUncertain):
             # Keep PREPARING plus its original result for a later confirmation;
@@ -663,6 +768,7 @@ class ResidentService:
 
     def call(self, request):
         with self.fence:
+            q.require(self._pending_cleanup.alive,'RESIDENT_CLOSED')
             action=request.get('action');principal=request.get('principal_id')
             if principal not in self.config['principals']:
                 raise JobError('UNAUTHORIZED','Principal is not admitted')
@@ -779,7 +885,11 @@ def serve(config):
             q.require(stat.S_ISDIR(info.st_mode) and info.st_uid==0 and not info.st_mode&0o022,'RESIDENT_DIRECTORY')
     lock=os.open(Path(config['private_root'])/'service.lock',os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)
     fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-    service=ResidentService(config)
+    with closing(ResidentService(config)) as service:
+        _serve_requests(config,service)
+
+
+def _serve_requests(config,service):
     service.recover_undispatched()
     if service.maintenance_gate is not None:
         from local_hand_jobs.deployment import verify_release

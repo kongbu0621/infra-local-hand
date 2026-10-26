@@ -306,8 +306,60 @@ def original_not_started(profile, duty):
     return proof
 
 
+def original_execution(profile, duty):
+    """Resolve a superseded execution from its immutable prepared resources.
+
+    The current pointer can only reveal a contradictory task owner. It never
+    supplies the old launch, request, output path, or process identity.
+    """
+    owner = profile.get('owner_uid', 0)
+    try:
+        component = duty['loaded']['component']
+        guard = profile['guarded_components'][component]
+        config = decode(startup.protected_read(guard['configuration'], owner_uid=owner))
+        prepared = duty['binding']['prepared']
+        maintenance.MaintenanceGate._validate_prepared(prepared)
+        operation = duty['operation_id']
+        validate_tool_args('lh_job_status', {'operation_id': operation})
+        root, attempt = Path(config['private_root']), Path(prepared['attempt_id'])
+        if (duty['kind'] != 'execute' or set(duty['binding']) != {'prepared'}
+                or profile['probes'][component]['kind'] != 'resident' or 'execute' not in guard['entrypoints']
+                or duty['loaded']['node_id'] != config['maintenance']['node_id']
+                or prepared['operation_id'] != operation or prepared['boot_id'] != duty['loaded']['boot_id']
+                or str(attempt) != prepared['attempt_id'] or attempt.parent != root / operation
+                or re.fullmatch(r'attempt-[1-9][0-9]{0,19}', attempt.name) is None):
+            raise ValueError('execution binding differs')
+        result = decode(startup.protected_read(attempt / 'result.json', owner_uid=owner, maximum=2 * 1024 * 1024))
+        launch = result['launch']
+        request, controller = launch['request'], launch['controller_envelope']['controller']
+        principal = launch['principal_id']
+        if (result.get('status') != 'PREPARED' or maintenance.digest(launch) != prepared['resource_digest']
+                or request['operation_id'] != operation or request['request_digest'] != prepared['request_digest']
+                or type(principal) is not str or not 0 < len(principal) <= 256
+                or controller['boot_id'] != duty['loaded']['boot_id']):
+            raise ValueError('original launch differs')
+        current = decode(startup.protected_read(root / operation / 'current.json', owner_uid=owner))
+        if (type(current) is not dict or current.get('operation_id') != operation or current.get('principal_id') != principal
+                or current.get('attempt') == str(attempt) and current.get('maintenance_prepared') != prepared):
+            raise ValueError('task identity differs')
+        reservation = Path(result['reservation'])
+        if str(reservation) != result['reservation'] or not reservation.is_absolute() or '..' in reservation.parts:
+            raise ValueError('original launch path differs')
+        launch_path = reservation / 'launch-static.json'
+        raw = startup.protected_read(launch_path, owner_uid=owner, maximum=2 * 1024 * 1024)
+        if decode(raw) != launch:
+            raise ValueError('original static launch differs')
+        output = attempt / 'execution'
+        fd = startup._protected_directory(output, owner_uid=owner)
+        os.close(fd)
+        return {'kind': 'prepared', 'launch_path': str(launch_path), 'launch_digest': hashlib.sha256(raw).hexdigest(),
+                'output': str(output), 'controller_unit': controller['unit']}
+    except (KeyError, TypeError, ValueError, JobError, OSError) as error:
+        raise DeployError('RETAINED_DISPATCH_UNRESOLVED', 'Original execution binding differs') from error
+
+
 def observe_reboot_closure(profile, component, *, expected_boot, current_boot, preparation_boots=None,
-                          preparation_unstarted=None):
+                          preparation_unstarted=None, original_execution=None):
     """Only actual old-boot task parents/jobs can discharge lost pipe custody.
 
     Reuse the offline import's bounded, independent systemd/cgroup observer.
@@ -356,6 +408,7 @@ def observe_reboot_closure(profile, component, *, expected_boot, current_boot, p
             raise DeployError('RETAINED_DISPATCH_UNRESOLVED', 'Original preparation no-start binding differs')
     observer.deadline = time.monotonic() + profile.get("timeout_seconds", 30)
     with observer.bus_factory() as bus:
+        execution_proof = observer.duties(bus, original_execution) if original_execution is not None else None
         bindings = {}
         if preparation_boots:
             bindings['preparation_boots'] = preparation_boots
@@ -364,4 +417,5 @@ def observe_reboot_closure(profile, component, *, expected_boot, current_boot, p
         proof = observer.duties(bus, entry, **bindings)
     if startup.boot_id() != current_boot:
         raise DeployError("RETAINED_DISPATCH_UNRESOLVED", "Host boot changed while observing original task closure")
-    return {"original_boot_id": expected_boot, "observed_boot_id": current_boot, "duties": proof}
+    return {"original_boot_id": expected_boot, "observed_boot_id": current_boot, "duties": proof,
+            **({'original_execution': execution_proof} if execution_proof is not None else {})}

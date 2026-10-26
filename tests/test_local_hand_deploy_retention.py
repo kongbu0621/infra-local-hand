@@ -575,3 +575,107 @@ class PreparationRetentionTests(unittest.TestCase):
                 self.assertRaisesRegex(Exception, 'no-start proof conflicts'):
             environment.drain({'id': 'recover'})
         self.assertTrue(all(gate.snapshot()['responsibilities'][item['id']]['state'] == 'DISPATCHING' for item in duties))
+
+    def superseded_execution(self, *, current_boot=False):
+        from admin.local_hand_deploy import bootstrap
+        b, gate, environment, duties = self.historical_preparation_drain()
+        for duty in duties:
+            gate.finish(duty, {'process_exited': True, 'writers_stopped': True})
+        attempt = Path(duties[0]['attempt_id'])
+        directory = attempt.parent
+        current_path = directory / 'current.json'
+        current = bootstrap._read(current_path, b.uid)
+        config = bootstrap._read(b.config, b.uid)
+        config['max_tasks'] = 32; b.write(b.config, config)
+        now_loaded = maintenance.loaded_configuration(config, boot_id=startup.boot_id())
+        now_launch = bootstrap._read(current['launch_path'], b.uid)
+        now_launch.update(principal_id='owner', request={'operation_id': directory.name,
+            'request_digest': 'e' * 64, 'expires_at': time.time() + 600})
+        now_launch['controller_envelope']['controller']['boot_id'] = startup.boot_id()
+        b.write(Path(current['launch_path']), now_launch)
+        current.update(request=now_launch['request'], maintenance_prepared=maintenance.prepared_binding(now_loaded,
+            operation_id=directory.name, attempt_id=current['attempt'], request_digest='e' * 64, launch=now_launch))
+        b.write(current_path, current)
+        old_boot = startup.boot_id() if current_boot else '11111111-1111-4111-8111-111111111111'
+        loaded = maintenance.loaded_configuration(config, boot_id=old_boot)
+        launch = copy.deepcopy(now_launch)
+        launch['request']['request_digest'] = 'd' * 64
+        launch['controller_envelope']['controller'].update(unit='old-execution.service', boot_id=old_boot)
+        reservation = attempt / 'reservation'; reservation.mkdir(mode=0o700)
+        b.write(reservation / 'launch-static.json', launch)
+        b.write(attempt / 'result.json', {'status': 'PREPARED', 'reservation': str(reservation), 'launch': launch})
+        output = attempt / 'execution'; output.mkdir(mode=0o700)
+        b.write(output / 'launch-intent.json', {'original': True})
+        b.write(output / 'finished.json', {'returncode': 1, 'streams_eof': True})
+        prepared = maintenance.prepared_binding(loaded, operation_id=directory.name,
+            attempt_id=str(attempt), request_digest='d' * 64, launch=launch)
+        receipt = gate.accept('execute', directory.name, 'old-execution-attempt', {'prepared': prepared}, loaded, prepared=prepared)
+        gate.dispatch(receipt)
+        gate.close('recover', expected=gate.snapshot())
+        return b, gate, environment, receipt, current_path, attempt
+
+    def test_superseded_execution_closes_by_original_launch_without_rewriting_current(self):
+        from admin.local_hand_deploy import bootstrap
+        b, gate, environment, receipt, current, attempt = self.superseded_execution()
+        originals = {path: path.read_bytes() for path in (current, attempt / 'result.json',
+            attempt / 'reservation' / 'launch-static.json', attempt / 'execution' / 'finished.json')}
+        with patch.object(bootstrap, 'OfflineObserver', return_value=b.observer), \
+                patch.object(environment, '_probe', side_effect=AssertionError('old manager is stopped')):
+            self.assertTrue(environment.drain({'id': 'recover'})['quiescent'])
+        self.assertEqual({'process_exited': True, 'writers_stopped': True},
+                         gate.snapshot()['responsibilities'][receipt['id']]['proof'])
+        self.assertEqual(originals, {path: path.read_bytes() for path in originals})
+
+    def test_superseded_execution_still_refuses_the_original_live_controller(self):
+        from admin.local_hand_deploy import bootstrap
+        b, gate, environment, receipt, _, _ = self.superseded_execution()
+        b.bus.units['old-execution.service'] = {'LoadState': 'loaded', 'ActiveState': 'active', 'MainPID': 73, 'Job': [0]}
+        with patch.object(bootstrap, 'OfflineObserver', return_value=b.observer):
+            with self.assertRaisesRegex(Exception, 'not closed'):
+                environment.drain({'id': 'recover'})
+        self.assertEqual('DISPATCHING', gate.snapshot()['responsibilities'][receipt['id']]['state'])
+
+    def test_superseded_execution_requires_original_material_and_task_identity(self):
+        from admin.local_hand_deploy import bootstrap
+        from admin.local_hand_deploy.model import DeployError
+        b, gate, environment, receipt, current, attempt = self.superseded_execution()
+        result_path, static_path = attempt / 'result.json', attempt / 'reservation' / 'launch-static.json'
+        result = bootstrap._read(result_path, b.uid)
+        wrong_request = copy.deepcopy(result)
+        wrong_request['launch']['request']['request_digest'] = 'f' * 64
+        wrong_owner = {**bootstrap._read(current, b.uid), 'principal_id': 'another-owner'}
+        cases = ((result_path, None), (result_path, wrong_request), (static_path, None),
+                 (static_path, {'different': 'launch'}), (current, wrong_owner))
+        with patch.object(bootstrap, 'OfflineObserver') as observer:
+            for path, value in cases:
+                with self.subTest(path=path.name, value=value):
+                    original = path.read_bytes()
+                    try:
+                        if value is None:
+                            path.unlink()
+                        else:
+                            b.write(path, value)
+                        with self.assertRaises(DeployError) as rejected:
+                            environment.drain({'id': 'recover'})
+                        self.assertEqual('RETAINED_DISPATCH_UNRESOLVED', rejected.exception.code)
+                        self.assertEqual('DISPATCHING', gate.snapshot()['responsibilities'][receipt['id']]['state'])
+                    finally:
+                        path.write_bytes(original); path.chmod(0o600)
+            observer.assert_not_called()
+        # The exit reply is not identity material. After an independently
+        # observed boot change, missing old streams remain missing, not success.
+        (attempt / 'execution' / 'finished.json').unlink()
+        with patch.object(bootstrap, 'OfflineObserver', return_value=b.observer):
+            self.assertTrue(environment.drain({'id': 'recover'})['quiescent'])
+        self.assertFalse((attempt / 'execution' / 'finished.json').exists())
+
+    def test_superseded_same_boot_execution_keeps_live_manager_custody(self):
+        from admin.local_hand_deploy import bootstrap
+        b, gate, environment, receipt, _, _ = self.superseded_execution(current_boot=True)
+        b.bus.units['old-execution.service'] = {'LoadState': 'loaded', 'ActiveState': 'active', 'MainPID': 73, 'Job': [0]}
+        with patch.object(bootstrap, 'OfflineObserver') as observer, \
+                patch.object(environment, '_probe', return_value={'execution_state': 'RUNNING'}) as probe:
+            self.assertFalse(environment.drain({'id': 'recover'})['quiescent'])
+        probe.assert_called_once_with('manager', reconcile=True)
+        observer.assert_not_called()
+        self.assertEqual('DISPATCHING', gate.snapshot()['responsibilities'][receipt['id']]['state'])

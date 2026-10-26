@@ -873,7 +873,7 @@ class ConcreteEnvironment(PlanningEnvironment):
         # Original pipes cannot survive a host boot. Close their admission
         # custody only after separately proving all original task parents/jobs
         # empty; do not need a stopped manager socket to recover that fact.
-        from .preparations import observe_reboot_closure, original_preparation, original_not_started
+        from .preparations import observe_reboot_closure, original_preparation, original_not_started, original_execution
         boot = startup.boot_id()
         old = [duty for duty in active if duty["loaded"]["boot_id"] != boot]
         observations = {}
@@ -923,6 +923,7 @@ class ConcreteEnvironment(PlanningEnvironment):
                     elif never_started:
                         preparation_unstarted.setdefault(component, {})[duty['attempt_id']] = original_not_started(self.profile, duty)
             for duty in old:
+                execution = None
                 if duty['kind'] == 'prepare':
                     if duty['state'] == 'ACCEPTED':
                         self.gate.finish(duty, {'never_dispatched': True})
@@ -933,13 +934,19 @@ class ConcreteEnvironment(PlanningEnvironment):
                     matching = [item for item in snapshot["tasks"] if item["component"] == duty["loaded"]["component"]
                         and item["operation_id"] == duty["operation_id"]
                         and item.get("prepared") == duty["binding"].get("prepared")]
-                    if len(matching) != 1:
+                    if not matching:
+                        execution = original_execution(self.profile, duty)
+                    elif len(matching) != 1:
                         raise DeployError("RETAINED_DISPATCH_UNRESOLVED", "Original boot responsibility has no exact task binding")
                 key = (duty["loaded"]["component"], duty["loaded"]["boot_id"])
+                if execution is not None:
+                    key += (digest(execution),)
                 if key not in checked:
                     kwargs = ({'preparation_boots': preparation_boots[key[0]]} if key[0] in preparation_boots else {})
                     if key[0] in preparation_unstarted:
                         kwargs['preparation_unstarted'] = preparation_unstarted[key[0]]
+                    if execution is not None:
+                        kwargs['original_execution'] = execution
                     observe_reboot_closure(self.profile, key[0], expected_boot=key[1], current_boot=boot, **kwargs)
                     checked.add(key)
                 self.gate.finish(duty, {"process_exited": True, "writers_stopped": True})
@@ -1093,12 +1100,68 @@ class ConcreteEnvironment(PlanningEnvironment):
     def selected_deployment(self, op):
         return op["plan"]["target"] if op["decision"] == "COMMITTED" else self._source(op)
 
+    def _committed_gateway(self, chain):
+        """Verify the last original gateway identity before planning rollback.
+
+        A committed decision is historical evidence, not permission to replace
+        a new container now occupying the old name. Keep route readiness out of
+        this identity/closure check so an unhealthy original can be restored.
+        """
+        latest = None
+        for origin in chain:
+            for step, record in zip(origin['plan']['steps'], origin['steps']):
+                if (step['kind'] == 'gateway' and record.get('prepared') is not None
+                        and (record['effective'] or record['attempts'] or record['state'] == 'VERIFIED')):
+                    latest = origin, step, record['prepared'], record['attempts'], record.get('observation')
+            for entry in origin.get('compensation', []):
+                step, record = entry['step'], entry['record']
+                if (step['kind'] == 'gateway' and (record['effective'] or record['restore_attempts']
+                        or record['state'] == 'RESTORED')):
+                    latest = origin, step, record['restore'], record['restore_attempts'], record.get('restore_observation')
+        if latest is None:
+            return None
+        self._mutating_adapters(readonly=True)
+        origin, step, action, attempts, saved = latest
+        previous = self._previous(attempts[-1]) if attempts else None
+        kind = action['kind']
+        identity = None
+        if kind == 'gateway_create':
+            identity = self.gateway.creation_identity(action, previous, observation=saved, lock_fd=self.store.lock_fd)
+            if identity is not None:
+                previous = {'binding': attempts[-1]['binding'], 'effect_identity': identity}
+        elif kind == 'gateway_start':
+            identity = self._start_identity(step, action, origin)
+            if identity is None:
+                identifier = self.gateway._start_identity(action, None)
+                if identifier is not None:
+                    identity = {'container_id': identifier, 'daemon_id': action['before']['daemon_id']}
+        elif action['before'].get('kind') == 'container':
+            identity = {'container_id': action['before']['id'], 'daemon_id': action['before']['daemon_id']}
+        if identity is None or identity['daemon_id'] != self.profile['gateway']['daemon_id']:
+            raise DeployError('RESTORE_GATEWAY_IDENTITY', 'Committed gateway has no exact original object proof')
+        observed = self.gateway.observe_action(action, previous, lock_fd=self.store.lock_fd,
+            require_route=False, expected_identity=identity if kind == 'gateway_start' else None)
+        if observed.get('closed') is not True or observed.get('outcome') in {'unknown', 'running'}:
+            raise DeployError('CALLER_NOT_CLOSED', 'Original gateway call still needs reconciliation')
+        current = observed['observation']
+        if current['kind'] == 'container':
+            if current['id'] != identity['container_id'] or current['daemon_id'] != identity['daemon_id']:
+                raise DeployError('RESTORE_GATEWAY_IDENTITY', 'Committed gateway was independently replaced')
+        else:
+            from urllib.parse import quote
+            original = self.gateway.engine.request('GET', '/containers/' + quote(identity['container_id'], safe='') + '/json', missing=True)
+            if original is not None:
+                raise DeployError('RESTORE_GATEWAY_IDENTITY', 'Original gateway still exists outside its recorded name')
+        return current
+
     def restored_plan(self, op, request_id):
         # A rollback of a committed deployment is a new plan, never a rewrite of
         # its historic decision. Build from retained originals after observation.
         from .planner import MANIFEST_SCHEMA, build_plan
         from .recovery import entries, reload_tree
         chain = self._origins(op)
+        gateway_selected = bool(self.profile.get('gateway') and op['plan']['target'].get('gateway') is not None)
+        gateway = self._committed_gateway(chain) if gateway_selected else None
         original_files, latest_files = {}, {}
         for step, prepared, attempts, effective in entries(chain):
             if step["kind"] != "file" or not (effective or attempts):
@@ -1122,6 +1185,8 @@ class ConcreteEnvironment(PlanningEnvironment):
                           **{key: original[key] for key in ("mode", "uid", "gid")}})
         source = _clone(op["plan"]["target"])
         source["selection"] = self._current_selection()
+        if gateway is not None:
+            source['gateway'].update(present=gateway['kind'] == 'container', running=gateway.get('status') == 'running')
         profile = _clone(self.profile)
         profile.pop("recovery_from", None)
         if any(origin["plan"]["profile"].get("security_repair") for origin in chain):
@@ -1134,5 +1199,16 @@ class ConcreteEnvironment(PlanningEnvironment):
             original = self._origins(op)[0]["plan"]["profile"]["gateway"]
             profile["gateway"]["original_compose"] = profile["gateway"]["compose"]
             profile["gateway"]["compose"] = _clone(original.get("original_compose", original["compose"]))
-        return build_plan({"schema": MANIFEST_SCHEMA, "request_id": request_id, "node_id": op["plan"]["node_id"],
+        plan = build_plan({"schema": MANIFEST_SCHEMA, "request_id": request_id, "node_id": op["plan"]["node_id"],
                            "source": source, "target": self._source(op), "files": specs, "profile": profile}, PlanningEnvironment(profile))
+        if gateway_selected and gateway is None and any(step['kind'] == 'gateway' for step in plan['steps']):
+            raise DeployError('RESTORE_GATEWAY_IDENTITY', 'Rollback cannot claim an unrecorded gateway object')
+        if gateway is not None:
+            for step in plan['steps']:
+                if step['kind'] != 'gateway':
+                    continue
+                before = step['action']['before']
+                if (before['kind'] == 'container' and (gateway['kind'] != 'container'
+                        or before['id'] != gateway['id'] or before['daemon_id'] != gateway['daemon_id'])):
+                    raise DeployError('RESTORE_GATEWAY_IDENTITY', 'Gateway changed while constructing rollback')
+        return plan

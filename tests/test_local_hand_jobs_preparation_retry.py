@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import threading
@@ -315,6 +316,7 @@ class PreparationRetryTests(unittest.TestCase):
 class ReadyPublicationTests(unittest.TestCase):
     def preparation(self):
         case=resident_fixtures.PreparationTests('runTest');case.setUp();self.addCleanup(case.doCleanups)
+        self.addCleanup(lambda:getattr(case.service,'close',lambda:None)())
         record=case.ready_record();record['state']='PREPARING'
         attempt=Path(record['attempt']);attempt.mkdir()
         record.update(serial=1,prepare_unit='original.service')
@@ -402,7 +404,193 @@ class ReadyPublicationTests(unittest.TestCase):
         self.assertNotEqual(changed[0],current.stat().st_ino)
         self.assertEqual('READY',json.loads(current.read_text())['state'])
         self.assertEqual('PREPARING',case.service.records[record['operation_id']]['state'])
+        replacement=current.stat().st_ino;raw=current.read_bytes()
+        with patch.object(case.service,'_preparation_active',return_value=False), \
+                patch.object(admin.task_service,'TaskService'), \
+                patch.object(case.service,'_prepare_worker') as worker:
+            for _ in range(2):
+                with self.assertRaises(JobError) as pending:case.service.call(dict(case.args,retry_failed=True))
+                self.assertEqual('IO_UNCERTAIN',pending.exception.code)
+                self.assertEqual(replacement,current.stat().st_ino);self.assertEqual(raw,current.read_bytes())
         worker.assert_not_called()
+
+    def test_pending_ready_poll_skips_new_admission_and_staging_failures(self):
+        from local_hand_jobs.contract import JobError
+        for boundary in ('admission_read','staging_write'):
+            with self.subTest(boundary=boundary):
+                case,record,launch=self.preparation();attempt=Path(record['attempt'])
+                current=attempt.parent/'current.json';parent=current.parent.stat();sync=os.fsync
+                def unavailable(fd):
+                    info=os.fstat(fd)
+                    if ((info.st_dev,info.st_ino)==(parent.st_dev,parent.st_ino)
+                            and json.loads(current.read_text())['state']=='READY'):
+                        raise OSError('original READY directory sync unavailable')
+                    sync(fd)
+                with patch.object(case.service,'_preparation_active',return_value=False), \
+                        patch.object(case.service,'_prepare_worker') as worker:
+                    with patch.object(admin.os,'fsync',side_effect=unavailable), \
+                            patch.object(admin.task_service,'TaskService'):
+                        with self.assertRaises(JobError):case.service.call(case.args)
+                    original=current.read_bytes();inode=current.stat().st_ino
+                    failure=(attempt/'preparation-failure.json').read_bytes();save=admin.task_service.save
+                    def fail_staging(directory,name,value,mode=0o600):
+                        if name.startswith('.current.json-') and value.get('state')=='READY':
+                            raise OSError('second local READY staging failure')
+                        return save(directory,name,value,mode)
+                    fault=(patch.object(admin.task_service,'TaskService',side_effect=OSError('second admission read failed'))
+                           if boundary=='admission_read' else patch.object(admin.task_service,'save',side_effect=fail_staging))
+                    with patch.object(admin.task_service,'TaskService'),fault, \
+                            patch.object(case.service,'_preparation_active',side_effect=AssertionError('already completed')):
+                        response=case.service.call(case.args)
+                    self.assertEqual('READY',response['state']);self.assertEqual(launch['request'],response['request'])
+                    self.assertEqual(original,current.read_bytes());self.assertEqual(inode,current.stat().st_ino)
+                    self.assertEqual(failure,(attempt/'preparation-failure.json').read_bytes())
+                    self.assertEqual(record['attempt'],case.service.records[record['operation_id']]['attempt'])
+                    worker.assert_not_called()
+
+    def test_pending_ready_never_confirms_or_overwrites_a_replaced_parent(self):
+        from local_hand_jobs.contract import JobError
+        case,record,_=self.preparation();current=Path(record['attempt']).parent/'current.json'
+        directory=current.parent.stat();sync=os.fsync;changed=[]
+        def replace_parent(fd):
+            sync(fd);info=os.fstat(fd)
+            if (not changed and (info.st_dev,info.st_ino)==(directory.st_dev,directory.st_ino)
+                    and json.loads(current.read_text())['state']=='READY'):
+                changed.append(True)
+                retained=current.parent.with_name('original-operation-parent')
+                current.parent.rename(retained);shutil.copytree(retained,current.parent)
+                raise OSError('original READY parent was replaced')
+        with patch.object(case.service,'_preparation_active',return_value=False), \
+                patch.object(admin.task_service,'TaskService'), \
+                patch.object(case.service,'_prepare_worker') as worker:
+            with patch.object(admin.os,'fsync',side_effect=replace_parent):
+                with self.assertRaises(JobError):case.service.call(case.args)
+            raw=current.read_bytes();inode=current.stat().st_ino;parent=current.parent.stat().st_ino
+            for _ in range(2):
+                with self.assertRaises(JobError) as pending:case.service.call(case.args)
+                self.assertEqual('IO_UNCERTAIN',pending.exception.code)
+                self.assertEqual(raw,current.read_bytes());self.assertEqual(inode,current.stat().st_ino)
+                self.assertEqual(parent,current.parent.stat().st_ino)
+            worker.assert_not_called()
+
+    def test_rename_without_effect_resumes_original_candidate_and_checks_previous_pointer(self):
+        from local_hand_jobs.contract import JobError
+        for replace_previous in (False,True):
+            with self.subTest(replace_previous=replace_previous):
+                case,record,launch=self.preparation();current=Path(record['attempt']).parent/'current.json'
+                rename=os.rename;staged=[]
+                def not_renamed(source,destination,**kwargs):
+                    if destination=='current.json':
+                        staged.append(current.with_name(source));raise OSError('READY rename did not execute')
+                    return rename(source,destination,**kwargs)
+                with patch.object(case.service,'_preparation_active',return_value=False), \
+                        patch.object(admin.task_service,'TaskService'), \
+                        patch.object(case.service,'_prepare_worker') as worker:
+                    with patch.object(admin.os,'rename',side_effect=not_renamed):
+                        with self.assertRaises(JobError):case.service.call(case.args)
+                    candidate=staged[0].stat().st_ino
+                    self.assertEqual('PREPARING',json.loads(current.read_text())['state'])
+                    if replace_previous:
+                        replacement=current.with_name('independent-previous.json')
+                        replacement.write_bytes(current.read_bytes());replacement.chmod(0o600);os.replace(replacement,current)
+                        previous=current.stat().st_ino
+                    with patch.object(admin.task_service,'TaskService',side_effect=AssertionError('must reuse original candidate')):
+                        if replace_previous:
+                            with self.assertRaises(JobError) as pending:case.service.call(case.args)
+                            self.assertEqual('IO_UNCERTAIN',pending.exception.code)
+                            self.assertEqual(previous,current.stat().st_ino)
+                            self.assertEqual(candidate,staged[0].stat().st_ino)
+                        else:
+                            response=case.service.call(case.args)
+                            self.assertEqual('READY',response['state']);self.assertEqual(launch['request'],response['request'])
+                            self.assertEqual(candidate,current.stat().st_ino);self.assertFalse(staged[0].exists())
+                    worker.assert_not_called()
+
+    def test_pending_ready_descriptors_are_bounded_and_closed_on_confirmation_or_service_close(self):
+        from local_hand_jobs.contract import JobError
+        for recover in (False,True):
+            with self.subTest(recover=recover):
+                case,record,_=self.preparation();current=Path(record['attempt']).parent/'current.json'
+                parent=current.parent.stat();sync=os.fsync
+                def unavailable(fd):
+                    info=os.fstat(fd)
+                    if ((info.st_dev,info.st_ino)==(parent.st_dev,parent.st_ino)
+                            and json.loads(current.read_text())['state']=='READY'):
+                        raise OSError('READY sync still unavailable')
+                    sync(fd)
+                count=lambda:len(os.listdir('/proc/self/fd'))
+                baseline=count()
+                with patch.object(case.service,'_preparation_active',return_value=False), \
+                        patch.object(admin.task_service,'TaskService'):
+                    with patch.object(admin.os,'fsync',side_effect=unavailable):
+                        for _ in range(3):
+                            with self.assertRaises(JobError) as pending:case.service.call(case.args)
+                            self.assertEqual('IO_UNCERTAIN',pending.exception.code)
+                            self.assertEqual(baseline+3,count())
+                    if recover:self.assertEqual('READY',case.service.call(case.args)['state'])
+                    else:case.service.close();case.service.close()
+                self.assertEqual(baseline,count())
+
+    def test_repeated_pending_failure_reuses_records_and_retains_different_errors(self):
+        from local_hand_jobs.contract import JobError
+        case,record,launch=self.preparation();attempt=Path(record['attempt'])
+        current=attempt.parent/'current.json';parent=current.parent.stat();sync=os.fsync;cause=['sync failure A']
+        def unavailable(fd):
+            info=os.fstat(fd)
+            if ((info.st_dev,info.st_ino)==(parent.st_dev,parent.st_ino)
+                    and json.loads(current.read_text())['state']=='READY'):
+                raise OSError(cause[0])
+            sync(fd)
+        failures=lambda:{path.name:path.read_bytes() for path in attempt.glob('preparation-failure*.json')}
+        with patch.object(case.service,'_preparation_active',return_value=False), \
+                patch.object(admin.task_service,'TaskService'), \
+                patch.object(case.service,'_prepare_worker') as worker:
+            with patch.object(admin.os,'fsync',side_effect=unavailable):
+                # The initial publication and its later confirmation have
+                # different failure notes; both originals must be retained.
+                for _ in range(2):
+                    with self.assertRaises(JobError):case.service.call(case.args)
+                original=failures();self.assertEqual(2,len(original))
+                for _ in range(4):
+                    with self.assertRaises(JobError) as pending:case.service.call(case.args)
+                    self.assertEqual('IO_UNCERTAIN',pending.exception.code)
+                    self.assertEqual(original,failures())
+                cause[0]='sync failure B'
+                with self.assertRaises(JobError):case.service.call(case.args)
+                changed=failures();self.assertEqual(3,len(changed))
+                self.assertTrue(any(b'sync failure B' in raw for raw in changed.values()))
+                self.assertTrue(all(changed[name]==raw for name,raw in original.items()))
+                cause[0]='sync failure A'
+                with self.assertRaises(JobError):case.service.call(case.args)
+                self.assertEqual(changed,failures())
+            raw=current.read_bytes();inode=current.stat().st_ino
+            response=case.service.call(case.args)
+            self.assertEqual('READY',response['state']);self.assertEqual(launch['request'],response['request'])
+            self.assertEqual(raw,current.read_bytes());self.assertEqual(inode,current.stat().st_ino)
+            self.assertEqual(changed,failures());worker.assert_not_called()
+
+    def test_pending_failure_digest_record_cannot_be_reused_with_different_content(self):
+        from local_hand_jobs.contract import JobError
+        case,record,_=self.preparation();attempt=Path(record['attempt'])
+        current=attempt.parent/'current.json';parent=current.parent.stat();sync=os.fsync
+        def unavailable(fd):
+            info=os.fstat(fd)
+            if ((info.st_dev,info.st_ino)==(parent.st_dev,parent.st_ino)
+                    and json.loads(current.read_text())['state']=='READY'):
+                raise OSError('same pending failure')
+            sync(fd)
+        with patch.object(case.service,'_preparation_active',return_value=False), \
+                patch.object(admin.task_service,'TaskService'), \
+                patch.object(admin.os,'fsync',side_effect=unavailable):
+            for _ in range(2):
+                with self.assertRaises(JobError):case.service.call(case.args)
+            retained=next(attempt.glob('preparation-failure-*.json'))
+            retained.write_bytes(b'{"different":"record"}\n');replacement=retained.read_bytes()
+            current_bytes=current.read_bytes()
+            with self.assertRaisesRegex(ValueError,'RESIDENT_FAILURE_RECORD_CONFLICT'):
+                case.service.call(case.args)
+        self.assertEqual(2,len(list(attempt.glob('preparation-failure*.json'))))
+        self.assertEqual(replacement,retained.read_bytes());self.assertEqual(current_bytes,current.read_bytes())
 
     def test_restart_reconfirms_visible_ready_before_catalog_and_preserves_original_bytes(self):
         from local_hand_jobs.contract import JobError

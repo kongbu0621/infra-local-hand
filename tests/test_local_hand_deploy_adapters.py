@@ -14,7 +14,7 @@ import time
 import unittest
 
 from admin.local_hand_deploy.supervision import AdapterError, SupervisedRunner, boot_id, verify_lock
-from admin.local_hand_deploy.services import SystemdAdapter, tree_snapshot, validate_guard
+from admin.local_hand_deploy.services import SystemdAdapter, tree_snapshot, validate_guard, _link_state
 from admin.local_hand_deploy.gateway import GatewayAdapter
 from admin.local_hand_deploy.systemd_bus import SystemdBus
 
@@ -322,7 +322,7 @@ class ServiceTests(unittest.TestCase):
 
     def test_exact_link_policy_effect_replays_without_replacing_link(self):
         action = {"kind": "service_policy_link", "target": "fixture.service", "path": self.path,
-                  "before": {"kind": "absent"}, "after": {"kind": "link", "target": "/fixture/unit.service"}}
+                  "before": _link_state(self.path), "after": {"kind": "link", "target": "/fixture/unit.service"}}
         result = self.adapter.execute(action, attempt_id="link", lock_fd=self.fd, persist_intent=lambda _: None)
         self.assertTrue(result["postcondition"])
         inode = Path(self.path).lstat().st_ino
@@ -331,9 +331,10 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(inode, Path(self.path).lstat().st_ino)
 
     def test_policy_cannot_follow_or_replace_independent_link(self):
+        before = _link_state(self.path)
         os.symlink("/unrelated", self.path)
         action = {"kind": "service_policy_link", "target": "fixture.service", "path": self.path,
-                  "before": {"kind": "absent"}, "after": {"kind": "link", "target": "/fixture/unit.service"}}
+                  "before": before, "after": {"kind": "link", "target": "/fixture/unit.service"}}
         with self.assertRaisesRegex(AdapterError, "CONFLICT"):
             self.adapter.execute(action, attempt_id="bad", lock_fd=self.fd, persist_intent=lambda _: None)
         self.assertEqual("/unrelated", os.readlink(self.path))
@@ -471,7 +472,7 @@ class ServiceTests(unittest.TestCase):
 
     def test_new_process_recovers_durable_intent_before_child_registration(self):
         action = {"kind": "service_policy_link", "target": "fixture.service", "path": self.path,
-                  "before": {"kind": "absent"}, "after": {"kind": "link", "target": "/fixture/unit.service"}}
+                  "before": _link_state(self.path), "after": {"kind": "link", "target": "/fixture/unit.service"}}
         intent = self.root / "saved-intent.json"
         coordinator = os.fork()
         if coordinator == 0:

@@ -147,27 +147,49 @@ class SupervisedRunner:
         directory = self._directory(binding["attempt_id"])
         result = None
         process = None
-        for name in ("binding.json", "process.json", "result.json"):
+        not_started = None
+        present = set()
+        for name in ("binding.json", "process.json", "result.json", "not-started.json"):
             try:
                 value = _read_json(directory / name, self.output_limit)
             except FileNotFoundError:
                 continue
+            present.add(name)
             if name == "binding.json" and value != binding:
                 raise AdapterError("SUPERVISION_BINDING_CONFLICT")
             if name == "process.json":
                 process = value
             if name == "result.json":
                 result = value
+            if name == "not-started.json":
+                not_started = value
         events = []
         for index in range(32):
             try:
                 events.append(_read_json(directory / f"event-{index:02}.json", self.output_limit))
             except FileNotFoundError:
                 break
-        if process is None:
+        child = self._children.get(binding["attempt_id"])
+        retained = child.get("not_started") if child is not None else None
+        if "not-started.json" in present or retained is not None:
+            if "not-started.json" not in present:
+                not_started = retained
+            if (not isinstance(not_started, dict)
+                    or set(not_started) != {"schema", "binding_digest", "error_type", "error"}
+                    or not_started["schema"] != "lh-deploy-not-started-v1"
+                    or not_started["binding_digest"] != digest(binding)
+                    or not isinstance(not_started["error_type"], str)
+                    or not isinstance(not_started["error"], str)
+                    or retained is not None and retained != not_started
+                    or present.intersection({"process.json", "result.json"})
+                    or any(os.path.lexists(directory / f"event-{index:02}.json") for index in range(32))):
+                raise AdapterError("SUPERVISION_NO_START_CONFLICT")
+            closed = lock_fd is not None
+            if closed:
+                verify_lock(lock_fd, binding["lock"] if binding["boot"] == boot_id() else None)
+        elif process is None:
             # With the node lock acquired, an unrecorded child cannot still run:
             # every child inherits it, and its first action is process.json.
-            child = self._children.get(binding["attempt_id"])
             current = process_identity(os.getpid())
             original = binding.get("coordinator")
             recovered = original is not None and (current["boot"], current["pid"], current["start"]) != (original["boot"], original["pid"], original["start"])
@@ -186,6 +208,7 @@ class SupervisedRunner:
             live = process_identity(process["pid"])
             closed = live is None or live["start"] != process["start"] or live["state"] == "Z"
         return {"binding": binding, "closed": closed, "result": result, "events": events,
+                **({"not_started": not_started} if not_started is not None else {}),
                 "outcome": "returned" if result is not None and closed else "unknown" if closed else "running"}
 
     def run(self, action, perform, *, attempt_id, lock_fd, persist_intent, previous=None):
@@ -215,11 +238,21 @@ class SupervisedRunner:
             return self.observe(old, lock_fd=lock_fd)
         directory.mkdir(mode=0o700)
         _write_once(directory / "binding.json", binding, self.output_limit)
-        persist_intent(binding)
-        # Forking an active multithreaded coordinator is intentionally unsupported.
-        if len(list(Path("/proc/self/task").iterdir())) != 1:
-            raise AdapterError("SUPERVISOR_REQUIRES_SINGLE_THREAD_DISPATCH")
-        pid = os.fork()
+        try:
+            persist_intent(binding)
+            # Forking an active multithreaded coordinator is intentionally unsupported.
+            if len(list(Path("/proc/self/task").iterdir())) != 1:
+                raise AdapterError("SUPERVISOR_REQUIRES_SINGLE_THREAD_DISPATCH")
+        except BaseException as error:
+            self._record_not_started(binding, directory, error)
+            raise
+        try:
+            pid = os.fork()
+        except OSError as error:
+            # Only an explicit fork failure proves that no child exists. An
+            # asynchronous interruption must retain its original uncertainty.
+            self._record_not_started(binding, directory, error)
+            raise
         if pid == 0:
             try:
                 verify_lock(lock_fd, lock)
@@ -267,3 +300,25 @@ class SupervisedRunner:
         # Uninterruptible I/O still holds the inherited lock. Do not unlock it or
         # infer that an external request was undone just because our wait ended.
         return self.observe(binding)
+
+    def _record_not_started(self, binding, directory, error):
+        proof = {"schema": "lh-deploy-not-started-v1", "binding_digest": digest(binding),
+                 "error_type": type(error).__name__, "error": str(error)[:512]}
+        # The original caller also knows this fact if writing the receipt fails.
+        # A new caller must use the saved proof or independently prove closure.
+        self._children[binding["attempt_id"]] = {"not_started": proof}
+        try:
+            # A short write must not expose a malformed completion receipt.
+            # Failed staging bytes remain private alongside the original intent.
+            pending = directory / "not-started.pending"
+            _write_once(pending, proof, self.output_limit)
+            if os.path.lexists(directory / "not-started.json"):
+                raise AdapterError("SUPERVISION_NO_START_CONFLICT")
+            os.rename(pending, directory / "not-started.json")
+            parent = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+            try:
+                os.fsync(parent)
+            finally:
+                os.close(parent)
+        except (OSError, ValueError, RuntimeError) as recording:
+            error.add_note("No-start receipt failure: " + type(recording).__name__ + ": " + str(recording)[:512])
