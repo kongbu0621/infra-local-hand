@@ -130,6 +130,9 @@ class FixedLauncher:
         self.loaded_deployment=loaded
         self.maintenance_prepared=prepared
         self.maintenance_admission=None
+        self.admission_attempt=None
+        self.unstarted_admission=None
+        self.popen_unresolved=False
         self.started = (self.output/'started.json').exists() or (self.output/'launch-intent.json').exists()
         self.finished = (self.output/'finished.json').exists()
         if self.finished:
@@ -168,6 +171,9 @@ class FixedLauncher:
 
     def state(self):
         self._finish_local_failure()
+        if getattr(self,'popen_unresolved',False):
+            raise JobError('IO_UNCERTAIN','Original controller process creation is unresolved')
+        self._finish_unstarted_admission()
         if self.failure is not None:
             raise JobError('IO_UNCERTAIN', 'Prepared controller capture needs inspection')
         if self.finished:
@@ -189,6 +195,17 @@ class FixedLauncher:
         if self.started:
             raise JobError('IO_UNCERTAIN', 'A prior launch is unresolved; inspect the original task')
         return 'IDLE'
+
+    def _finish_unstarted_admission(self):
+        receipt=getattr(self,'unstarted_admission',None)
+        if receipt is None:return
+        if self.maintenance_admission!=receipt or self.process is not None or self.started:
+            raise JobError('IO_UNCERTAIN','Original no-child admission identity changed')
+        try:self.maintenance_gate.finish(receipt,dict(never_dispatched=True))
+        except (JobError,OSError,ValueError) as error:
+            raise JobError('IO_UNCERTAIN','Original no-child admission still needs closure') from error
+        self.maintenance_admission=None
+        self.unstarted_admission=None
 
     def _retain_unstarted_intent(self, prefix):
         # Only paths reached before successful Popen may release this intent.
@@ -361,22 +378,33 @@ class FixedLauncher:
         gate=getattr(self,'maintenance_gate',None)
         receipt=None
         if gate is not None:
+            if self.maintenance_admission is not None:
+                # A reconstructed DISPATCHING receipt has no same-process
+                # no-child fact. Missing intent files cannot authorize replay.
+                raise JobError('IO_UNCERTAIN','Original execution admission still needs reconciliation')
             prepared=self.maintenance_prepared
             if (prepared is None or prepared.get('request_digest')!=self.launch['request']['request_digest']
                     or prepared.get('resource_digest')!=maintenance.digest(self.launch)):
                 raise JobError('STALE_DEPLOYMENT','Original prepared resources differ from their deployment binding')
-            receipt=gate.accept('execute',self.launch['request']['operation_id'],uuid.uuid4().hex,
+            if getattr(self,'admission_attempt',None) is None:self.admission_attempt=uuid.uuid4().hex
+            # A failed acknowledgement may follow the durable acceptance.
+            # Reconfirm that same attempt rather than hiding it with a new one.
+            receipt=gate.accept('execute',self.launch['request']['operation_id'],self.admission_attempt,
                 dict(prepared=prepared),self.loaded_deployment,authorization=authorization,prepared=prepared)
             self.maintenance_admission=receipt
+            self.admission_attempt=None
         try:
             return self._start(authorization=authorization)
-        except BaseException:
+        except BaseException as error:
             # This process still owns the attempt and no Popen returned a
             # child. A durable dispatch intent alone does not fabricate a
             # remote effect; positive local no-delivery proof permits retry.
-            if receipt is not None and self.process is None and not self.started:
-                gate.finish(receipt,dict(never_dispatched=True))
-                self.maintenance_admission=None
+            if (receipt is not None and self.process is None and not self.started
+                    and not getattr(self,'popen_unresolved',False)):
+                self.unstarted_admission=receipt
+                try:self._finish_unstarted_admission()
+                except JobError as closure:
+                    error.add_note('Original no-child closure remains pending: '+str(closure.__cause__)[:512])
             raise
 
     def _start(self, *, authorization=None):
@@ -429,11 +457,14 @@ class FixedLauncher:
                     except BaseException:
                         self._retain_unstarted_intent('local-maintenance-failed')
                         raise
+                self.popen_unresolved=True
                 self.process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE, cwd='/', env={'PATH':'/usr/bin:/bin'})
             except OSError as error:
+                self.popen_unresolved=False
                 self._retain_unstarted_intent('local-start-failed')
                 raise JobError('IO_UNCERTAIN', 'Controller process could not be created') from error
+            self.popen_unresolved=False
             self.started = True
             delivered = True
         finally:

@@ -273,6 +273,11 @@ class ResidentService:
                     binding_digest=duty['binding_digest'])
 
     def _finish_unstarted_preparation(self, duty, record):
+        # Absence is required, not a false/null decoded value. A saved exit,
+        # dangling link or unreadable name conflicts with no-child recovery.
+        try:(Path(duty['attempt_id'])/'preparation-exit.json').lstat()
+        except FileNotFoundError:pass
+        else:raise ValueError('RESIDENT_PREPARATION_START_CONFLICT')
         repair=(record is not None and record['attempt']==duty['attempt_id'] and record['state']=='PREPARING')
         if repair:
             q.require(record.get('maintenance_admission',{}).get('id')==duty['id'],

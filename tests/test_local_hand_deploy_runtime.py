@@ -306,8 +306,9 @@ class RuntimeTests(unittest.TestCase):
         plan["profile"]["gateway"] = {"compose": new, "original_compose": old}
         environment = ConcreteEnvironment(plan, self.store(), self.gate)
         operation = {"plan": plan, "steps": [], "inherited": []}
-        with patch("admin.local_hand_deploy.planner.build_plan", side_effect=lambda manifest, observer: (manifest, observer)):
-            manifest, observer = environment.restored_plan(operation, "restore-original")
+        with patch("admin.local_hand_deploy.planner.build_plan", return_value={'steps': []}) as planner:
+            environment.restored_plan(operation, "restore-original")
+        manifest, observer = planner.call_args.args
         self.assertEqual(old, manifest["profile"]["gateway"]["compose"])
         self.assertEqual(new, manifest["profile"]["gateway"]["original_compose"])
         self.assertIs(manifest["profile"], observer.profile)

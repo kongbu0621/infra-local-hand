@@ -508,7 +508,9 @@ class EngineFixture:
         if path.startswith("/images/"):
             return {"Id": "sha256:" + "a" * 64, "Config": {}}
         if method == "GET" and path.startswith("/containers/"):
-            return self.container
+            selected = path.removeprefix('/containers/').removesuffix('/json')
+            return self.container if self.container is not None and selected in {
+                'fixture-gateway', self.container['Id']} else None
         raise AssertionError((method, path))
 
 

@@ -13,6 +13,7 @@ import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
+from urllib.parse import unquote, parse_qs, urlsplit
 
 from admin.local_hand_deploy.coordinator import Coordinator
 from admin.local_hand_deploy.runtime import ConcreteEnvironment
@@ -36,11 +37,23 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(raw)
 
     def do_GET(self):
-        if self.path.endswith("/info"):
+        if '/containers/json?' in self.path:
+            query = parse_qs(urlsplit(self.path).query)
+            filters = json.loads(query['filters'][0])['label']
+            containers = {**getattr(self.server, 'retained', {})}
+            if self.server.container is not None:
+                containers[self.server.container['Id']] = self.server.container
+            rows = [{'Id': value['Id'], 'Labels': value['Config']['Labels']} for value in containers.values()
+                    if all(value['Config']['Labels'].get(key) == wanted
+                           for key, wanted in (item.split('=', 1) for item in filters))]
+            self.reply(200, rows[:int(query['limit'][0])])
+        elif self.path.endswith("/info"):
             self.reply(200, {"ID": "response-fixture"})
         elif "/images/" in self.path:
             self.reply(200, {"Id": "sha256:" + "a" * 64, "Config": {}})
-        elif self.server.container is None:
+        elif (self.server.container is None or '/containers/' in self.path and
+                unquote(self.path.split('/containers/', 1)[1].removesuffix('/json')) not in {
+                    self.server.container['Id'], getattr(self.server, 'current_name', 'response-gateway')}):
             self.reply(404, {"message": "No such container"})
         else:
             self.reply(200, self.server.container)
@@ -143,6 +156,25 @@ class GatewayResponseTests(unittest.TestCase):
         self.assertEqual("DOCKER_HTTP_500", result["supervision"]["result"]["error"])
         self.execute("another", result["attempt"])
         self.assertEqual(1, self.count())
+
+    def test_temporary_creation_inventory_failure_can_resume_original_failed_reply(self):
+        request = self.adapter.engine.request
+        def unavailable(method, path, body=None, **kwargs):
+            if path.startswith('/containers/json?'):
+                raise OSError('temporary creation inventory unavailable')
+            return request(method, path, body, **kwargs)
+        with patch.object(self.adapter.engine, 'request', side_effect=unavailable):
+            with self.assertRaisesRegex(OSError, 'inventory unavailable'):
+                self.execute('failed-inventory')
+        self.assertEqual(1, len(self.intents))
+        self.assertEqual(1, self.count())
+        receipt = Path(self.intents[0]['result_directory']) / 'result.json'
+        original = receipt.read_bytes()
+        self.mode.write_text('success')
+        result = self.execute('inventory-recovered', self.intents[0])
+        self.assertTrue(result['postcondition'])
+        self.assertEqual(2, self.count())
+        self.assertEqual(original, receipt.read_bytes())
 
     def independent_create(self, attempt='independent-admin'):
         self.mode.write_text('success')

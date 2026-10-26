@@ -158,7 +158,7 @@ class GatewayStartTests(unittest.TestCase):
         op = self.coordinator.resume(op['id'])
         self.assertIsNone(op['decision'])
         self.assertNotIn('effect_identity', op['steps'][0]['attempts'][0])
-        self.assertEqual('conflict', op['steps'][0]['observation']['state'])
+        self.assertEqual('unknown', op['steps'][0]['observation']['state'])
 
     def test_inherited_legacy_forward_and_compensation_keep_saved_creation_identity(self):
         self.f.mode.write_text('effect_then_error')

@@ -213,6 +213,39 @@ class PreparationRetryTests(unittest.TestCase):
         closed=case.gate.snapshot()['responsibilities'][original['maintenance_admission']['id']]
         self.assertEqual({'never_dispatched':True},closed['proof'])
 
+    def test_no_start_recovery_retains_responsibility_when_exit_evidence_conflicts(self):
+        for restart in (False,True):
+            for conflict in ('null','returned','dangling','unreadable'):
+                with self.subTest(restart=restart,conflict=conflict):
+                    case,service=self.service();request=self.request()
+                    service.config['installation']['installed']['programs']['systemd_run']['path']=str(case.root/'missing-program')
+                    with patch.object(admin.provision_task,'task_input',return_value={}), \
+                            patch.object(case.gate,'finish',side_effect=OSError('original closure reply unavailable')):
+                        service.call(request);service.worker.join(3)
+                    self.assertFalse(service.worker.is_alive())
+                    record=service.records[request['operation_id']];attempt=Path(record['attempt'])
+                    no_start=(attempt/'preparation-not-started.json').read_bytes()
+                    exit_path=attempt/'preparation-exit.json'
+                    if conflict=='dangling':exit_path.symlink_to(attempt/'missing-exit')
+                    else:exit_path.write_text('null' if conflict=='null' else '{"returncode":0}')
+                    retained=case.gate.snapshot()
+                    if restart:service=self.restart(case,service)
+                    lstat=Path.lstat
+                    def observed(path,*args,**kwargs):
+                        if conflict=='unreadable' and path==exit_path:raise PermissionError('exit presence unavailable')
+                        return lstat(path,*args,**kwargs)
+                    with patch.object(Path,'lstat',new=observed),patch.object(admin,'unit_closed') as unit:
+                        service.recover_undispatched();service.deployment_status()
+                        self.assertEqual(retained,case.gate.snapshot())
+                        unit.assert_not_called()
+                    self.assertEqual(no_start,(attempt/'preparation-not-started.json').read_bytes())
+                    # Remove only the injected contradiction to restore the
+                    # fixture's real ENOENT/no-child evidence, then retry.
+                    exit_path.unlink();service.recover_undispatched()
+                    closed=case.gate.snapshot()['responsibilities'][record['maintenance_admission']['id']]
+                    self.assertEqual('CLOSED',closed['state'])
+                    self.assertEqual({'never_dispatched':True},closed['proof'])
+
     def test_communication_failure_cannot_be_reclassified_as_unstarted(self):
         case,service=self.service();request=self.request()
         process=Mock(returncode=1)

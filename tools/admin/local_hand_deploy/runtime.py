@@ -750,18 +750,50 @@ class ConcreteEnvironment(PlanningEnvironment):
         return files.prepare_restore(record["prepared"], self._directory(op, step["id"], "restore"),
             operation_id=op["id"], attempt_id="restore-" + step["id"], lock_fd=self.store.lock_fd)
 
+    def _gateway_history(self, op):
+        """Retain exact forward/compensation identities across the owned chain."""
+        actions, creations = [], []
+        for origin in self._origins(op):
+            records = [(step, record, 'prepared', 'attempts', 'observation', 'VERIFIED')
+                       for step, record in zip(origin['plan']['steps'], origin['steps'])]
+            records += [(entry['step'], entry['record'], 'restore', 'restore_attempts',
+                         'restore_observation', 'RESTORED') for entry in origin.get('compensation', [])]
+            for step, record, action_key, attempts_key, observation_key, done in records:
+                action = record.get(action_key)
+                if step['kind'] != 'gateway' or action is None:
+                    continue
+                attempts = record[attempts_key]
+                verified = record['state'] == done
+                if record['effective'] or action_key == 'restore' and (attempts or verified):
+                    actions.append(action)
+                if action['kind'] == 'gateway_create' and attempts:
+                    for index, attempt in enumerate(attempts):
+                        if not attempt.get('binding'):
+                            continue
+                        latest = index == len(attempts) - 1
+                        creations.append((action, attempt, record.get(observation_key) if latest else None,
+                                          verified if latest else False))
+        observations = []
+        if creations:
+            self._mutating_adapters(readonly=True)
+        for action, attempt, saved, verified in creations:
+            previous = self._previous(attempt)
+            identity = self.gateway.creation_identity(action, previous, observation=saved, lock_fd=self.store.lock_fd)
+            if identity is not None or verified:
+                previous = {'binding': attempt['binding'], **({'effect_identity': identity} if identity is not None
+                            else {'effect_identity_required': True})}
+            observations.append(self.gateway.observe_action(action, previous,
+                lock_fd=self.store.lock_fd, require_route=False))
+        return actions, observations
+
     def prepare_compensation(self, op):
         origins = self._origins(op)
-        selected, service_actions, gateway_actions = {}, [], []
+        selected, service_actions = {}, []
         policy_records = {}
-        gateway_creations = []
         for origin in origins:
             for step, record in zip(origin["plan"]["steps"], origin["steps"]):
                 if record["prepared"] is None:
                     continue
-                if step['kind'] == 'gateway' and record['prepared']['kind'] == 'gateway_create' and record['attempts']:
-                    gateway_creations.append((record['prepared'], record['attempts'][-1],
-                                              record.get('observation'), record['state'] == 'VERIFIED'))
                 if (step['kind'] == 'service' and record['prepared'].get('kind') == 'service_policy_link'
                         and (record['effective'] or record['attempts'] or record['state'] == 'VERIFIED')):
                     policy_records[record['prepared']['path']] = (record['prepared'], record['attempts'])
@@ -777,8 +809,6 @@ class ConcreteEnvironment(PlanningEnvironment):
                     selected.setdefault(step["action"]["target"], []).append((step, record))
                 elif step["kind"] == "service":
                     service_actions.append(record["prepared"])
-                else:
-                    gateway_actions.append(record["prepared"])
             for entry in origin.get("compensation", []):
                 step, record = entry["step"], entry["record"]
                 if not (record["effective"] or record["restore_attempts"] or record["state"] == "RESTORED"):
@@ -791,26 +821,13 @@ class ConcreteEnvironment(PlanningEnvironment):
                     service_actions.append(record["restore"])
                     if record['restore'].get('kind') == 'service_policy_link':
                         policy_records[record['restore']['path']] = (record['restore'], record['restore_attempts'])
-                elif step['kind'] == 'gateway':
-                    gateway_actions.append(record['restore'])
-                    if record['restore']['kind'] == 'gateway_create' and record['restore_attempts']:
-                        gateway_creations.append((record['restore'], record['restore_attempts'][-1],
-                                                  record.get('restore_observation'), record['state'] == 'RESTORED'))
         # A retained action describes the desired value, not the identity of
         # whatever currently occupies that path. Follow the latest forward or
         # compensation attempt across inheritance to its original supervisor.
         policy_observations = {path: self.services.observe_action(action,
             self._previous(attempts[-1]) if attempts else None, lock_fd=self.store.lock_fd)
             for path, (action, attempts) in policy_records.items()}
-        creation_observations = []
-        for action, attempt, saved, verified in gateway_creations:
-            previous = self._previous(attempt)
-            identity = self.gateway.creation_identity(action, previous, observation=saved, lock_fd=self.store.lock_fd)
-            if identity is not None or verified:
-                previous = {'binding': attempt['binding'], **({'effect_identity': identity} if identity is not None
-                            else {'effect_identity_required': True})}
-            creation_observations.append(self.gateway.observe_action(action, previous,
-                lock_fd=self.store.lock_fd, require_route=False))
+        gateway_actions, creation_observations = self._gateway_history(op)
         # All file conflicts are checked before even staging a compensation.
         merged = []
         for chain in selected.values():
@@ -873,7 +890,8 @@ class ConcreteEnvironment(PlanningEnvironment):
         # Original pipes cannot survive a host boot. Close their admission
         # custody only after separately proving all original task parents/jobs
         # empty; do not need a stopped manager socket to recover that fact.
-        from .preparations import observe_reboot_closure, original_preparation, original_not_started, original_execution
+        from .preparations import (observe_reboot_closure, original_preparation, original_not_started,
+                                   original_execution, observe_finished_execution)
         boot = startup.boot_id()
         old = [duty for duty in active if duty["loaded"]["boot_id"] != boot]
         observations = {}
@@ -956,6 +974,24 @@ class ConcreteEnvironment(PlanningEnvironment):
         for component, guard in self.profile["guarded_components"].items():
             if component not in observations and ("prepare" in guard["entrypoints"] or "execute" in guard["entrypoints"]):
                 observations[component] = self._probe(component, reconcile=True)
+        marker = self.gate.snapshot()
+        if marker['state'] != 'CLOSED' or marker['owner'] != op['id']:
+            raise DeployError('MAINTENANCE_CONFLICT', "Drain requires the operation's durable maintenance ownership")
+        pending = [duty for duty in marker['responsibilities'].values()
+                   if duty['state'] != 'CLOSED' and duty['kind'] == 'execute' and duty['loaded']['boot_id'] == boot]
+        if pending:
+            snapshot = self.preparation_inventory()
+            for duty in pending:
+                if any(item['component'] == duty['loaded']['component']
+                       and item['operation_id'] == duty['operation_id']
+                       and item.get('prepared') == duty['binding'].get('prepared') for item in snapshot['tasks']):
+                    continue
+                # A restarted manager only visits its current pointer. A later
+                # preparation can leave the old, fully captured execute duty
+                # outside that registry; recover only its exact original launch.
+                execution = original_execution(self.profile, duty)
+                if observe_finished_execution(self.profile, execution, expected_boot=boot) is not None:
+                    self.gate.finish(duty, {'process_exited': True, 'writers_stopped': True})
         active = self.gate.active()
         return {"quiescent": not active, "accepted_responsibilities": len(active), "observations": observations}
 
@@ -1049,6 +1085,8 @@ class ConcreteEnvironment(PlanningEnvironment):
                     raise DeployError("SERVICE_POSTCONDITION", "Selected stopped service still has activity")
         if selected.get("gateway") is not None:
             value, target = self.gateway.observe(), selected["gateway"]
+            actions, creations = self._gateway_history(op)
+            self.gateway.verify_history(actions, creations, observations=value)
             if ((value["kind"] == "container") != target.get("present", True)
                     or (value.get("status") == "running") != target["running"]
                     or value["kind"] == "container" and value.get("compose") != compose):
@@ -1100,6 +1138,24 @@ class ConcreteEnvironment(PlanningEnvironment):
     def selected_deployment(self, op):
         return op["plan"]["target"] if op["decision"] == "COMMITTED" else self._source(op)
 
+    def _committed_policy_links(self, chain):
+        """Carry original policy ownership into a new committed rollback plan."""
+        from .recovery import entries
+        latest = {}
+        for step, prepared, attempts, effective in entries(chain):
+            if (step['kind'] == 'service' and prepared.get('kind') == 'service_policy_link'
+                    and (attempts or effective)):
+                latest[prepared['path']] = step, prepared, attempts
+        observed = {}
+        for path, (step, prepared, attempts) in latest.items():
+            value = self.observe(step, prepared, attempts[-1] if attempts else None)
+            # A closed compensation that failed before changing the link still
+            # owns its exact original. Its unperformed target is not required.
+            if value.get('closed') is not True or value.get('state') not in {'original', 'target'}:
+                raise DeployError('RESTORE_POLICY_LINK_CONFLICT', 'Committed policy link no longer has its original identity')
+            observed[path] = value['observation']
+        return observed
+
     def _committed_gateway(self, chain):
         """Verify the last original gateway identity before planning rollback.
 
@@ -1144,6 +1200,8 @@ class ConcreteEnvironment(PlanningEnvironment):
         if observed.get('closed') is not True or observed.get('outcome') in {'unknown', 'running'}:
             raise DeployError('CALLER_NOT_CLOSED', 'Original gateway call still needs reconciliation')
         current = observed['observation']
+        actions, creations = self._gateway_history(chain[-1])
+        self.gateway.verify_history(actions, creations, observations=current)
         if current['kind'] == 'container':
             if current['id'] != identity['container_id'] or current['daemon_id'] != identity['daemon_id']:
                 raise DeployError('RESTORE_GATEWAY_IDENTITY', 'Committed gateway was independently replaced')
@@ -1160,6 +1218,7 @@ class ConcreteEnvironment(PlanningEnvironment):
         from .planner import MANIFEST_SCHEMA, build_plan
         from .recovery import entries, reload_tree
         chain = self._origins(op)
+        policy_links = self._committed_policy_links(chain)
         gateway_selected = bool(self.profile.get('gateway') and op['plan']['target'].get('gateway') is not None)
         gateway = self._committed_gateway(chain) if gateway_selected else None
         original_files, latest_files = {}, {}
@@ -1201,6 +1260,12 @@ class ConcreteEnvironment(PlanningEnvironment):
             profile["gateway"]["compose"] = _clone(original.get("original_compose", original["compose"]))
         plan = build_plan({"schema": MANIFEST_SCHEMA, "request_id": request_id, "node_id": op["plan"]["node_id"],
                            "source": source, "target": self._source(op), "files": specs, "profile": profile}, PlanningEnvironment(profile))
+        from .services import _same_link
+        for step in plan['steps']:
+            action = step['action']
+            if (step['kind'] == 'service' and action.get('kind') == 'service_policy_link'
+                    and not _same_link(action['before'], policy_links.get(action['path']))):
+                raise DeployError('RESTORE_POLICY_LINK_CONFLICT', 'Policy link changed while constructing rollback')
         if gateway_selected and gateway is None and any(step['kind'] == 'gateway' for step in plan['steps']):
             raise DeployError('RESTORE_GATEWAY_IDENTITY', 'Rollback cannot claim an unrecorded gateway object')
         if gateway is not None:

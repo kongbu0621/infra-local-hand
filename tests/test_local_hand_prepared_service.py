@@ -18,6 +18,106 @@ from admin.local_hand_system_manager.resident_service import ResidentService
 from local_hand_jobs.contract import JobError, Principal
 
 
+class FixedLaunchMaintenanceRetryTests(unittest.TestCase):
+    def maintained(self):
+        # Imported here because the maintenance fixtures also reuse the plain
+        # launcher fixture below; production protection remains unchanged.
+        from test_local_hand_maintenance_gate import RuntimeGateTests
+        case=RuntimeGateTests('runTest');self.addCleanup(case.doCleanups);case.setUp()
+        return case,case.fixed()
+
+    def fail_without_child(self,case,item):
+        with case.execution_patches(item,[str(case.root/'missing-controller')]), \
+                patch.object(case.gate,'finish',side_effect=OSError('original closure unavailable')):
+            with self.assertRaises((JobError,OSError)):item.start()
+        return item.maintenance_admission
+
+    def test_no_child_retry_closes_original_receipt_before_fresh_accept(self):
+        case,item=self.maintained();old=self.fail_without_child(case,item)
+        self.assertEqual('DISPATCHING',case.gate.active()[0]['state'])
+        retained={path:path.read_bytes() for path in item.output.glob('local-start-failed-*.json')}
+        accept=case.gate.accept
+        def checked_accept(*args,**kwargs):
+            original=case.gate.snapshot()['responsibilities'][old['id']]
+            self.assertEqual('CLOSED',original['state'])
+            self.assertEqual({'never_dispatched':True},original['proof'])
+            return accept(*args,**kwargs)
+        with case.execution_patches(item,[sys.executable,'-c','pass']), \
+                patch.object(case.gate,'accept',side_effect=checked_accept):
+            item.start();self.assertTrue(item.complete.wait(3));self.assertEqual('EXITED',item.state())
+        self.assertEqual([],case.gate.active())
+        self.assertEqual(2,len(case.gate.snapshot()['responsibilities']))
+        self.assertEqual(retained,{path:path.read_bytes() for path in retained})
+
+    def test_unavailable_old_closure_never_replaces_receipt_or_accepts_another_attempt(self):
+        case,item=self.maintained();old=self.fail_without_child(case,item)
+        retained={path.name:path.read_bytes() for path in item.output.iterdir()}
+        with case.execution_patches(item,[sys.executable,'-c','pass']), \
+                patch.object(case.gate,'finish',side_effect=OSError('still unavailable')), \
+                patch.object(case.gate,'accept',wraps=case.gate.accept) as accept, \
+                patch.object(prepared.subprocess,'Popen',side_effect=OSError('must not deliver')) as popen:
+            for _ in range(2):
+                with self.assertRaises((JobError,OSError)):item.start()
+                self.assertEqual(old,item.maintenance_admission)
+            accept.assert_not_called();popen.assert_not_called()
+        self.assertEqual(1,len(case.gate.snapshot()['responsibilities']))
+        self.assertEqual(retained,{path.name:path.read_bytes() for path in item.output.iterdir()})
+
+    def test_recreated_launcher_cannot_infer_no_child_from_missing_intent(self):
+        case,item=self.maintained();old=self.fail_without_child(case,item)
+        require=prepared.q.require
+        def fixture_protection(condition,code):
+            if code!='PREPARED_OUTPUT_PROTECTION':require(condition,code)
+        with patch.object(prepared.q,'require',side_effect=fixture_protection), \
+                patch.object(prepared.q2_config,'pinned_directory',side_effect=lambda _:os.dup(item.directory)):
+            reopened=prepared.FixedLauncher(item.launch,item.installation,item.static,item.output,
+                maintenance_gate=case.gate,loaded=item.loaded_deployment,prepared=item.maintenance_prepared)
+        self.addCleanup(os.close,reopened.directory)
+        with case.execution_patches(reopened,[sys.executable,'-c','pass']), \
+                patch.object(case.gate,'accept',wraps=case.gate.accept) as accept, \
+                patch.object(prepared.subprocess,'Popen',side_effect=OSError('must not deliver')) as popen:
+            with self.assertRaises(JobError) as pending:reopened.start()
+            self.assertEqual('IO_UNCERTAIN',pending.exception.code)
+            accept.assert_not_called();popen.assert_not_called()
+        self.assertEqual(old['id'],reopened.maintenance_admission['id'])
+        self.assertEqual('DISPATCHING',case.gate.active()[0]['state'])
+
+    def test_asynchronous_popen_interruption_is_not_positive_no_child_evidence(self):
+        case,item=self.maintained()
+        with case.execution_patches(item,[str(case.root/'unknown-controller')]), \
+                patch.object(prepared.subprocess,'Popen',side_effect=KeyboardInterrupt('unknown process boundary')):
+            with self.assertRaises(KeyboardInterrupt):item.start()
+        self.assertEqual('DISPATCHING',case.gate.active()[0]['state'])
+        with self.assertRaises(JobError) as pending:item.state()
+        self.assertEqual('IO_UNCERTAIN',pending.exception.code)
+        with patch.object(case.gate,'accept',wraps=case.gate.accept) as accept, \
+                patch.object(prepared.subprocess,'Popen') as popen:
+            with self.assertRaises(JobError):item.start()
+            accept.assert_not_called();popen.assert_not_called()
+
+    def test_lost_accept_reply_reuses_one_original_attempt_until_confirmed(self):
+        case,item=self.maintained();accept=case.gate.accept;attempts=[]
+        def lost_reply(*args,**kwargs):
+            receipt=accept(*args,**kwargs);attempts.append(receipt['attempt_id'])
+            raise OSError('original admission committed but reply lost')
+        with patch.object(case.gate,'accept',side_effect=lost_reply), \
+                patch.object(prepared.subprocess,'Popen') as popen:
+            for _ in range(3):
+                with self.assertRaisesRegex(OSError,'reply lost'):item.start()
+                self.assertIsNone(item.maintenance_admission)
+                self.assertEqual(1,len(case.gate.snapshot()['responsibilities']))
+            popen.assert_not_called()
+        self.assertEqual(1,len(set(attempts)))
+        original=case.gate.active()[0];self.assertEqual('ACCEPTED',original['state'])
+        with case.execution_patches(item,[sys.executable,'-c','pass']):
+            item.start();self.assertTrue(item.complete.wait(3));self.assertEqual('EXITED',item.state())
+        responsibilities=case.gate.snapshot()['responsibilities']
+        self.assertEqual([original['id']],list(responsibilities))
+        self.assertEqual('CLOSED',responsibilities[original['id']]['state'])
+        self.assertEqual({'process_exited':True,'writers_stopped':True},responsibilities[original['id']]['proof'])
+        self.assertEqual(original['id'],item.maintenance_admission['id'])
+
+
 class FixedLaunchTests(unittest.TestCase):
     def setUp(self):
         root=tempfile.TemporaryDirectory()

@@ -1,7 +1,9 @@
 """Retained preparation decisions cross the real coordinator/gate boundary."""
 import copy
 from pathlib import Path
+import threading
 import time
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -673,9 +675,69 @@ class PreparationRetentionTests(unittest.TestCase):
         from admin.local_hand_deploy import bootstrap
         b, gate, environment, receipt, _, _ = self.superseded_execution(current_boot=True)
         b.bus.units['old-execution.service'] = {'LoadState': 'loaded', 'ActiveState': 'active', 'MainPID': 73, 'Job': [0]}
-        with patch.object(bootstrap, 'OfflineObserver') as observer, \
+        with patch.object(bootstrap, 'OfflineObserver', return_value=b.observer), \
                 patch.object(environment, '_probe', return_value={'execution_state': 'RUNNING'}) as probe:
-            self.assertFalse(environment.drain({'id': 'recover'})['quiescent'])
+            with self.assertRaisesRegex(Exception, 'not closed'):
+                environment.drain({'id': 'recover'})
         probe.assert_called_once_with('manager', reconcile=True)
-        observer.assert_not_called()
         self.assertEqual('DISPATCHING', gate.snapshot()['responsibilities'][receipt['id']]['state'])
+
+    def superseded_manager_status(self, b, gate, current):
+        from admin.local_hand_deploy import bootstrap
+        from admin.local_hand_system_manager.resident_service import ResidentService
+        record = bootstrap._read(current, b.uid)
+        record['maintenance_admission'] = {'id': 'fixture-current-only'}
+        # Model a restarted resident's registry: its current unsubmitted
+        # launcher exists, while the superseded launch has no in-memory owner.
+        service = object.__new__(ResidentService)
+        service.config = bootstrap._read(b.config, b.uid)
+        service.root, service.boot = b.records, startup.boot_id()
+        service.maintenance_gate = gate
+        service.loaded_deployment = maintenance.loaded_configuration(service.config, boot_id=service.boot)
+        service.worker, service.protocol_ready = None, True
+        service.records = {record['operation_id']: record}
+        service.launchers = {record['attempt']: SimpleNamespace(state=lambda: 'IDLE')}
+        service.fence = threading.RLock()
+        return lambda *args, **kwargs: service.deployment_status()
+
+    def test_same_boot_superseded_execution_closes_after_original_exit_and_eof(self):
+        from admin.local_hand_deploy import bootstrap
+        b, gate, environment, receipt, current, attempt = self.superseded_execution(current_boot=True)
+        paths = (current, attempt / 'result.json', attempt / 'reservation' / 'launch-static.json',
+                 attempt / 'execution' / 'finished.json')
+        originals = {path: path.read_bytes() for path in paths}
+        with patch.object(bootstrap, 'OfflineObserver', return_value=b.observer), \
+                patch.object(environment, '_probe', side_effect=self.superseded_manager_status(b, gate, current)):
+            self.assertTrue(environment.drain({'id': 'recover'})['quiescent'])
+        self.assertEqual({'process_exited': True, 'writers_stopped': True},
+                         gate.snapshot()['responsibilities'][receipt['id']]['proof'])
+        self.assertEqual(originals, {path: path.read_bytes() for path in originals})
+
+    def test_same_boot_superseded_execution_requires_capture_and_no_queued_stage(self):
+        from admin.local_hand_deploy import bootstrap
+        from admin.local_hand_deploy.model import DeployError
+        b, gate, environment, receipt, current, attempt = self.superseded_execution(current_boot=True)
+        finished = attempt / 'execution' / 'finished.json'
+        original = finished.read_bytes()
+        with patch.object(environment, '_probe', side_effect=self.superseded_manager_status(b, gate, current)):
+            with patch.object(bootstrap, 'OfflineObserver') as observer:
+                finished.unlink()
+                self.assertFalse(environment.drain({'id': 'recover'})['quiescent'])
+                for captured in ({'returncode': 1, 'streams_eof': False},
+                                 {'returncode': None, 'streams_eof': True}, None):
+                    with self.subTest(captured=captured):
+                        b.write(finished, captured)
+                        with self.assertRaisesRegex(DeployError, 'capture is not closed'):
+                            environment.drain({'id': 'recover'})
+                observer.assert_not_called()
+            self.assertEqual('DISPATCHING', gate.snapshot()['responsibilities'][receipt['id']]['state'])
+            finished.write_bytes(original); finished.chmod(0o600)
+            b.bus.pending = [(1, 'original-stage.service')]
+            b.bus.units['original-stage.service'] = {'Slice': 'lhbootstrapfixture.slice'}
+            with patch.object(bootstrap, 'OfflineObserver', return_value=b.observer):
+                with self.assertRaisesRegex(Exception, 'queued system job'):
+                    environment.drain({'id': 'recover'})
+                self.assertEqual('DISPATCHING', gate.snapshot()['responsibilities'][receipt['id']]['state'])
+                b.bus.pending = []
+                self.assertTrue(environment.drain({'id': 'recover'})['quiescent'])
+        self.assertEqual(original, finished.read_bytes())

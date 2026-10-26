@@ -358,6 +358,36 @@ def original_execution(profile, duty):
         raise DeployError('RETAINED_DISPATCH_UNRESOLVED', 'Original execution binding differs') from error
 
 
+def observe_finished_execution(profile, execution, *, expected_boot):
+    """A same-boot orphan needs its original exit/EOF plus independent closure.
+
+    Only the verified original launch/output from original_execution is used.
+    Without captured completion, a stopped unit cannot prove lost pipes closed.
+    """
+    import time
+    from .bootstrap import OfflineObserver
+    if expected_boot != startup.boot_id():
+        raise DeployError('RETAINED_DISPATCH_UNRESOLVED', 'Original execution boot changed')
+    try:
+        raw = startup.protected_read(Path(execution['output']) / 'finished.json',
+                                     owner_uid=profile.get('owner_uid', 0), maximum=256 * 1024)
+    except JobError as error:
+        if isinstance(error.__cause__, FileNotFoundError):
+            return None
+        raise
+    captured = decode(raw)
+    if (type(captured) is not dict or type(captured.get('returncode')) is not int
+            or captured.get('streams_eof') is not True):
+        raise DeployError('RETAINED_DISPATCH_UNRESOLVED', 'Original execution capture is not closed')
+    observer = OfflineObserver(profile)
+    observer.deadline = time.monotonic() + profile.get('timeout_seconds', 30)
+    with observer.bus_factory() as bus:
+        proof = observer.duties(bus, execution)
+    if expected_boot != startup.boot_id():
+        raise DeployError('RETAINED_DISPATCH_UNRESOLVED', 'Original execution boot changed during observation')
+    return {'boot_id': expected_boot, 'capture_digest': hashlib.sha256(raw).hexdigest(), 'duties': proof}
+
+
 def observe_reboot_closure(profile, component, *, expected_boot, current_boot, preparation_boots=None,
                           preparation_unstarted=None, original_execution=None):
     """Only actual old-boot task parents/jobs can discharge lost pipe custody.
