@@ -310,9 +310,11 @@ class RuntimeGateTests(unittest.TestCase):
     def failed_preparation_with_unclosed_duty(self,service):
         request=dict(action='prepare',operation_id=str(uuid.uuid4()),kind='host.inspect',
                      profile_ref='fixture',principal_id='owner')
+        process=Mock(returncode=1)
+        process.__enter__=Mock(return_value=process);process.__exit__=Mock(return_value=False)
+        process.communicate.return_value=(b'',b'failed preparation')
         with patch.object(resident_service.provision_task,'task_input',return_value={}), \
-                patch.object(resident_service.subprocess,'run',
-                    return_value=subprocess.CompletedProcess([],1,b'',b'failed preparation')), \
+                patch.object(resident_service.subprocess,'Popen',return_value=process), \
                 patch.object(resident_service,'unit_closed',return_value=True), \
                 patch.object(self.gate,'finish',side_effect=OSError('temporary gate record outage')):
             service.call(request);service.worker.join(3)

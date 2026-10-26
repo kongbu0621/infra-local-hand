@@ -697,10 +697,14 @@ class ConcreteEnvironment(PlanningEnvironment):
     def prepare_compensation(self, op):
         origins = self._origins(op)
         selected, service_actions, gateway_actions = {}, [], []
+        policy_records = {}
         for origin in origins:
             for step, record in zip(origin["plan"]["steps"], origin["steps"]):
                 if record["prepared"] is None:
                     continue
+                if (step['kind'] == 'service' and record['prepared'].get('kind') == 'service_policy_link'
+                        and (record['effective'] or record['attempts'] or record['state'] == 'VERIFIED')):
+                    policy_records[record['prepared']['path']] = (record['prepared'], record['attempts'])
                 # A reboot can load published definitions before the planned
                 # explicit reload is attempted. Their original manager tree
                 # remains a required restoration target in either case.
@@ -725,6 +729,14 @@ class ConcreteEnvironment(PlanningEnvironment):
                         **record, "prepared": prepared, "attempts": record["restore_attempts"]}))
                 elif step["kind"] == "service":
                     service_actions.append(record["restore"])
+                    if record['restore'].get('kind') == 'service_policy_link':
+                        policy_records[record['restore']['path']] = (record['restore'], record['restore_attempts'])
+        # A retained action describes the desired value, not the identity of
+        # whatever currently occupies that path. Follow the latest forward or
+        # compensation attempt across inheritance to its original supervisor.
+        policy_observations = {path: self.services.observe_action(action,
+            self._previous(attempts[-1]) if attempts else None, lock_fd=self.store.lock_fd)
+            for path, (action, attempts) in policy_records.items()}
         # All file conflicts are checked before even staging a compensation.
         merged = []
         for chain in selected.values():
@@ -756,7 +768,8 @@ class ConcreteEnvironment(PlanningEnvironment):
         for kind, actions, adapter in (("service", service_actions, self.services if service_actions else None),
                                        ("gateway", gateway_actions, self.gateway if gateway_actions else None)):
             if actions:
-                kwargs = {"retained_tree": current, "retained_target": retained} if kind == "service" else {}
+                kwargs = {"retained_tree": current, "retained_target": retained,
+                          "policy_observations": policy_observations} if kind == "service" else {}
                 for action in adapter.plan_restore(actions, **kwargs):
                     if action["kind"] == "service_daemon_reload":
                         action["retained_files"] = objects
@@ -779,22 +792,35 @@ class ConcreteEnvironment(PlanningEnvironment):
         # Original pipes cannot survive a host boot. Close their admission
         # custody only after separately proving all original task parents/jobs
         # empty; do not need a stopped manager socket to recover that fact.
-        from .preparations import observe_reboot_closure
+        from .preparations import observe_reboot_closure, original_preparation
         boot = startup.boot_id()
         old = [duty for duty in active if duty["loaded"]["boot_id"] != boot]
         if old:
-            snapshot = self.preparation_inventory()
+            snapshot = None
             checked = set()
+            preparation_boots = {}
             for duty in old:
-                matching = [item for item in snapshot["tasks"] if item["component"] == duty["loaded"]["component"]
-                    and item["operation_id"] == duty["operation_id"]
-                    and (duty["kind"] == "prepare" and duty["id"] == item.get("admission_id")
-                         or duty["kind"] == "execute" and item.get("prepared") == duty["binding"].get("prepared"))]
-                if len(matching) != 1:
-                    raise DeployError("RETAINED_DISPATCH_UNRESOLVED", "Original boot responsibility has no exact task binding")
+                if duty['kind'] == 'prepare':
+                    original_preparation(self.profile, duty)
+                    if duty['state'] != 'ACCEPTED':
+                        preparation_boots.setdefault(duty['loaded']['component'], {})[duty['attempt_id']] = duty['loaded']['boot_id']
+            for duty in old:
+                if duty['kind'] == 'prepare':
+                    if duty['state'] == 'ACCEPTED':
+                        self.gate.finish(duty, {'never_dispatched': True})
+                        continue
+                else:
+                    if snapshot is None:
+                        snapshot = self.preparation_inventory()
+                    matching = [item for item in snapshot["tasks"] if item["component"] == duty["loaded"]["component"]
+                        and item["operation_id"] == duty["operation_id"]
+                        and item.get("prepared") == duty["binding"].get("prepared")]
+                    if len(matching) != 1:
+                        raise DeployError("RETAINED_DISPATCH_UNRESOLVED", "Original boot responsibility has no exact task binding")
                 key = (duty["loaded"]["component"], duty["loaded"]["boot_id"])
                 if key not in checked:
-                    observe_reboot_closure(self.profile, key[0], expected_boot=key[1], current_boot=boot)
+                    kwargs = ({'preparation_boots': preparation_boots[key[0]]} if key[0] in preparation_boots else {})
+                    observe_reboot_closure(self.profile, key[0], expected_boot=key[1], current_boot=boot, **kwargs)
                     checked.add(key)
                 self.gate.finish(duty, {"process_exited": True, "writers_stopped": True})
             active = self.gate.active()

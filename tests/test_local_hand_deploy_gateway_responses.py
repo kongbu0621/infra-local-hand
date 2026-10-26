@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 from admin.local_hand_deploy.coordinator import Coordinator
 from admin.local_hand_deploy.gateway import DockerEngine, DockerHTTPError, GatewayAdapter
-from admin.local_hand_deploy.model import PLAN_SCHEMA, digest, seal_plan
+from admin.local_hand_deploy.model import Limits, PLAN_SCHEMA, digest, seal_plan
 from admin.local_hand_deploy.store import Store
 from admin.local_hand_deploy.supervision import SupervisedRunner, boot_id
 from local_hand_jobs.maintenance import MaintenanceGate
@@ -182,6 +182,105 @@ class GatewayResponseTests(unittest.TestCase):
         self.assertFalse(any(e["kind"] == "engine_response" for e in result["supervision"]["events"]))
         self.assertIn("DOCKER_HTTP_400", result["supervision"]["result"]["error"])
 
+    def check_not_sent(self, failure, name):
+        with failure:
+            first = self.execute(name)
+        self.assertTrue(first["closed"])
+        self.assertEqual("original", first["outcome"])
+        self.assertFalse(first["dispatched"])
+        self.assertFalse(first["postcondition"])
+        self.assertFalse(self.requests.exists())
+        self.mode.write_text("success")
+        self.execute(name, first["attempt"])
+        self.assertFalse(self.requests.exists())
+        completed = self.execute(name + "-retry", first["attempt"])
+        self.assertTrue(completed["postcondition"])
+        self.assertEqual(1, self.count())
+        return first
+
+    def test_local_request_bound_failure_is_not_a_dispatched_operation(self):
+        self.check_not_sent(patch.object(self.adapter.engine, "maximum", 256), "request-bound")
+
+    def test_serialization_failure_is_not_a_dispatched_operation(self):
+        self.check_not_sent(patch.object(self.adapter, "_create_body", return_value={"invalid": object()}),
+                            "request-encoding")
+
+    def connect_failure(self):
+        from admin.local_hand_deploy import gateway
+        request = self.adapter.engine.request
+        def fail_connect(method, path, body=None, **kwargs):
+            if method == "POST":
+                with patch.object(gateway._UnixHTTP, "connect", side_effect=ConnectionRefusedError("connect refused")):
+                    return request(method, path, body, **kwargs)
+            return request(method, path, body, **kwargs)
+        return patch.object(self.adapter.engine, "request", side_effect=fail_connect)
+
+    def test_connect_failure_before_http_bytes_is_not_dispatched(self):
+        self.check_not_sent(self.connect_failure(), "request-connect")
+
+    def test_not_sent_proof_recording_failure_keeps_uncertainty(self):
+        from admin.local_hand_deploy import supervision
+        original = supervision._write_once
+        def fail_proof(path, value, maximum):
+            if value.get("kind") == "engine_not_sent":
+                raise OSError("unsent proof unavailable")
+            return original(path, value, maximum)
+        with self.connect_failure(), patch.object(supervision, "_write_once", side_effect=fail_proof):
+            result = self.execute("unsent-unrecorded")
+        self.assertFalse(result["closed"])
+        self.assertTrue(result["dispatched"])
+        self.assertEqual("unknown", result["outcome"])
+        self.assertFalse(self.requests.exists())
+        self.assertIn("connect refused", result["supervision"]["result"]["error"])
+        self.assertIn("PROOF_RECORD_FAILED", result["supervision"]["result"]["error"])
+
+    def test_not_sent_proof_must_match_original_mutation(self):
+        with self.connect_failure():
+            first = self.execute("bound-unsent")
+        self.assertFalse(first["dispatched"])
+        supervised = first["supervision"]
+        for field, wrong in (("method", "GET"), ("path", "/other"), ("stage", "response")):
+            bad = copy.deepcopy(supervised)
+            for event in bad["events"]:
+                if event["kind"] == "engine_not_sent":
+                    event["request"][field] = wrong
+            with self.subTest(field=field), patch.object(self.runner, "observe", return_value=bad):
+                observed = self.adapter.observe_action(self.action, first["attempt"], lock_fd=self.fd)
+                self.assertFalse(observed["closed"])
+                self.assertTrue(observed["dispatched"])
+
+    def test_not_sent_proof_survives_missing_final_report(self):
+        with self.connect_failure():
+            first = self.execute("unsent-no-report")
+        (Path(first["attempt"]["binding"]["result_directory"]) / "result.json").unlink()
+        observed = self.adapter.observe_action(self.action, first["attempt"], lock_fd=self.fd)
+        self.assertTrue(observed["closed"])
+        self.assertFalse(observed["dispatched"])
+        self.assertIsNone(observed["supervision"]["result"])
+        self.assertFalse(self.requests.exists())
+
+    def test_connect_error_type_after_request_is_still_unknown(self):
+        from admin.local_hand_deploy import gateway
+        request, receive = self.adapter.engine.request, gateway._UnixHTTP.getresponse
+        def failed_reply(method, path, body=None, **kwargs):
+            def received(connection):
+                receive(connection)
+                raise ConnectionRefusedError("transport failed after HTTP request was sent")
+            if method == "POST":
+                with patch.object(gateway._UnixHTTP, "getresponse", received):
+                    return request(method, path, body, **kwargs)
+            return request(method, path, body, **kwargs)
+        with patch.object(self.adapter.engine, "request", side_effect=failed_reply):
+            result = self.execute("sent-connect-error")
+        self.assertFalse(result["closed"])
+        self.assertTrue(result["dispatched"])
+        self.assertEqual("unknown", result["outcome"])
+        self.assertEqual(1, self.count())
+        self.mode.write_text("success")
+        repeated = self.execute("must-not-repeat", result["attempt"])
+        self.assertFalse(repeated["closed"])
+        self.assertEqual(1, self.count())
+
     def test_all_mutations_bind_responses_and_legacy_success_to_original_dispatch(self):
         for kind, method, suffix in (("gateway_start", "POST", "/start"),
                                      ("gateway_stop", "POST", "/stop?t=10"),
@@ -221,8 +320,8 @@ class GatewayResponseTests(unittest.TestCase):
     def test_oversized_error_response_stays_unknown(self):
         self.check_unknown("oversized")
 
-    def coordinator(self):
-        store = Store(self.root / "deployments", "response-node")
+    def coordinator(self, *, limits=Limits()):
+        store = Store(self.root / "deployments", "response-node", limits=limits)
         store.initialize()
         gate_root = self.root / "admission"
         gate_root.mkdir(mode=0o700)
@@ -267,6 +366,26 @@ class GatewayResponseTests(unittest.TestCase):
         self.assertEqual("ABORTED_NO_CHANGE", finished["decision"])
         self.assertTrue(finished["released"])
         self.assertEqual("OPEN", gate.snapshot()["state"])
+        self.assertEqual(1, self.count())
+
+    def test_unsent_attempt_does_not_consume_coordinator_dispatch_budget(self):
+        coordinator, plan, gate = self.coordinator(limits=Limits(max_attempts=1))
+        with self.connect_failure():
+            original = coordinator.apply(plan)
+        first = copy.deepcopy(original["steps"][0]["attempts"][0])
+        self.assertFalse(first["dispatched"])
+        self.assertIsNone(original["decision"])
+        self.assertFalse(self.requests.exists())
+        self.mode.write_text("success")
+        completed = coordinator.resume(original["id"])
+        self.assertEqual("COMMITTED", completed["decision"])
+        self.assertTrue(completed["released"])
+        self.assertEqual("OPEN", gate.snapshot()["state"])
+        attempts = completed["steps"][0]["attempts"]
+        self.assertEqual(2, len(attempts))
+        self.assertEqual(first, attempts[0])
+        self.assertTrue(attempts[1]["dispatched"])
+        coordinator.resume(original["id"])
         self.assertEqual(1, self.count())
 
 

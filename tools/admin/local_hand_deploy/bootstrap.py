@@ -351,7 +351,7 @@ class OfflineObserver:
             if value.get("Slice") in names or value.get("Id") in names:
                 _fail("BOOTSTRAP_BUSY", "An original task stage still has a queued system job")
 
-    def duties(self, bus, entry):
+    def duties(self, bus, entry, *, preparation_boots=None):
         if entry["kind"] == "prepared":
             raw = startup.protected_read(entry["launch_path"], owner_uid=self.owner, maximum=2 * 1024 * 1024)
             if hashlib.sha256(raw).hexdigest() != entry["launch_digest"]:
@@ -364,6 +364,8 @@ class OfflineObserver:
         root = Path(entry["records_root"])
         _directory(root, self.owner)
         records, attempts, fingerprints = 0, 0, []
+        preparation_boots = preparation_boots or {}
+        observed_attempts = set()
         for directory in _children(root, MAX_SCAN):
             mode = directory.lstat().st_mode
             if stat.S_ISLNK(mode):
@@ -405,8 +407,14 @@ class OfflineObserver:
                     if unit is None or (attempt == current_attempt and unit != record["prepare_unit"]):
                         _fail("BOOTSTRAP_UNRESOLVED", "Retained preparation lacks its exact unit binding")
                     self.stopped(bus, unit)
+                    attempt_boot = preparation_boots.get(str(attempt), record.get('boot_id'))
+                    if str(attempt) in preparation_boots:
+                        if (attempt == current_attempt and record.get('boot_id') is not None
+                                and attempt_boot != record['boot_id']):
+                            _fail('BOOTSTRAP_UNRESOLVED', 'Current preparation boot binding conflicts')
+                        observed_attempts.add(str(attempt))
                     if (not isinstance(proof, dict) or type(proof.get("returncode")) is not int):
-                        if record.get("boot_id") in (None, startup.boot_id()):
+                        if attempt_boot in (None, startup.boot_id()):
                             _fail("BOOTSTRAP_UNRESOLVED", "Preparation delivery is not closed")
                     fingerprints.append(digest({"delivery": data, "exit": proof}))
                 output = attempt / "execution"
@@ -416,7 +424,10 @@ class OfflineObserver:
                     self.task_parents(bus, launch)
                     self._execution(bus, output, launch["controller_envelope"]["controller"]["unit"],
                                     launch["controller_envelope"]["controller"].get("boot_id"))
-        return {"records": records, "attempts": attempts, "digest": digest(fingerprints)}
+        if observed_attempts != set(preparation_boots):
+            _fail('BOOTSTRAP_UNRESOLVED', 'Original preparation boot binding was not observed')
+        return {"records": records, "attempts": attempts, "digest": digest(fingerprints),
+                **({'preparation_boots': preparation_boots} if preparation_boots else {})}
 
     def entry_installation(self, component, candidates=None):
         candidates = candidates or {}

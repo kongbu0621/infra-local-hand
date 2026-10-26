@@ -283,12 +283,25 @@ class SystemdAdapter:
         return {"kind": "service_daemon_reload", "target": "manager", "before": self.profile["reload_scope"]["loaded_snapshot"],
                 "after": expected_tree, "subeffects": ["manager_reload"], "phase": "after_files"}
 
-    def plan_restore(self, original_actions, observations=None, *, retained_tree=None, retained_target=None):
+    def plan_restore(self, original_actions, observations=None, *, retained_tree=None, retained_target=None,
+                     policy_observations=None):
         """Build compensation by original targets, never by reversing commands.
 
         The coordinator restores files between quiesced_before_files and
         after_files; it must preserve this phase ordering across adapters.
         """
+        policy_observations = policy_observations or {}
+        owned_links = {}
+        for action in original_actions:
+            if action['kind'] != 'service_policy_link':
+                continue
+            path = action['path']
+            observed = policy_observations.get(path) or {}
+            current = _link_state(path)
+            if (observed.get('outcome') not in {'original', 'target'} or observed.get('closed') is not True
+                    or observed.get('observation') != current):
+                raise AdapterError('RESTORE_POLICY_LINK_CONFLICT')
+            owned_links[path] = current
         targets = {}
         for action in original_actions:
             if action["kind"] in ("service_start", "service_stop"):
@@ -300,15 +313,21 @@ class SystemdAdapter:
                     "definition_digest": old["definition_digest"], **{key: loaded.get(key) for key in ("config_digest", "deployment_digest")}}
         before = self.observe() if observations is None else observations
         restored = self.plan(targets, before, _check_global=False)
+        for action in restored:
+            if action['kind'] == 'service_policy_link' and owned_links.get(action['path']) != action['before']:
+                raise AdapterError('RESTORE_POLICY_LINK_CONFLICT')
         addressed = {a.get("path") for a in restored if a["kind"] == "service_policy_link"}
         for action in original_actions:
             if action["kind"] != "service_policy_link" or action["path"] in addressed:
                 continue
-            current = _link_state(action["path"])
+            current = owned_links[action['path']]
             original = {k: v for k, v in action["before"].items() if k in ("kind", "target")}
-            if current.get("kind") != original["kind"] or current.get("target") != original.get("target"):
+            observed = policy_observations[action['path']]
+            pending_sync = observed.get('outcome') == 'target' and observed.get('synced') is not True
+            if (current.get("kind") != original["kind"] or current.get("target") != original.get("target")
+                    or pending_sync):
                 restored.append({**action, "before": current, "after": original})
-                addressed.add(action["path"])
+            addressed.add(action["path"])
         reloads = [a for a in original_actions if a["kind"] == "service_daemon_reload"]
         if reloads:
             current = tree_snapshot(self.profile["reload_scope"]["roots"])
@@ -363,14 +382,26 @@ class SystemdAdapter:
             target = actual["kind"] == action["after"]["kind"] and actual.get("target") == action["after"].get("target")
             original = actual == action["before"]
             result = supervised and supervised.get("result") or {}
+            effects = [event.get('link') for event in events if event.get('kind') == 'policy_link_effect']
+            returned = result.get('value') if result.get('status') == 'returned' else None
+            receipt = returned.get('link') if isinstance(returned, dict) else None
+            owned = effects[-1] if effects else receipt
+            # New attempts persist the exact effect before syncing its parent.
+            # Old successful receipts carry the same identity. An interrupted
+            # legacy attempt (or a lost effect event) cannot claim a link merely
+            # because its target text matches the requested policy.
+            conflict = owned is not None and (actual != owned or receipt is not None and receipt != owned)
+            known_target = target and not conflict and (owned == actual or original)
+            outcome = ('conflict' if conflict else 'target' if known_target else 'original' if original
+                       else 'unknown' if target and previous else 'conflict')
             # Visibility is not evidence that the parent directory was synced.
             # A returned _perform receipt follows fsync and binds the exact link.
-            synced = bool(target and result.get("status") == "returned"
-                          and isinstance(result.get("value"), dict) and result["value"].get("link") == actual)
-            return {"outcome": "target" if target else "original" if original else "conflict", "closed": True,
-                    "postcondition": target and synced, "synced": synced, "observation": actual, "supervision": supervised,
-                    "proof": "satisfied_observed" if target else None,
-                    "dispatched": bool(supervised and (supervised.get("result") or {}).get("status") == "returned")}
+            synced = bool(known_target and receipt == actual)
+            proof = ('published_identity' if actual['kind'] == 'link' else 'satisfied_observed') if known_target else None
+            return {"outcome": outcome, "closed": True,
+                    "postcondition": known_target and synced, "synced": synced, "observation": actual, "supervision": supervised,
+                    "proof": "original_identity" if original and not conflict else proof,
+                    "dispatched": True if owned is not None else None if previous else False}
         with self.bus_factory() as bus:
             sender = next((event.get("sender") for event in reversed(events) if event.get("kind") == "bus_binding"), None)
             dispatch_recorded = any(event.get("kind") in ("dispatching", "reload_dispatching") for event in events)
@@ -419,7 +450,7 @@ class SystemdAdapter:
         self._validate_action(action)
         verify_lock(lock_fd)
         observed = self.observe_action(action, previous, lock_fd=lock_fd)
-        if observed["postcondition"] or not observed["closed"]:
+        if observed["postcondition"] or not observed["closed"] or observed['outcome'] == 'unknown':
             return observed
         if action["kind"] == "service_policy_link" and observed["outcome"] == "target":
             # The coordinator saves SYNC_INTENT before this no-attempt call.
@@ -459,7 +490,9 @@ class SystemdAdapter:
                 if action["before"]["kind"] != "absent":
                     raise AdapterError("ENABLE_LINK_REPLACEMENT_REQUIRES_SEPARATE_REMOVE")
                 os.symlink(action["after"]["target"], path)
-            return {"link": _sync_link_directory(path, _link_state(path))}
+            effect = _link_state(path)
+            emit({'kind': 'policy_link_effect', 'link': effect})
+            return {"link": _sync_link_directory(path, effect)}
         with self.bus_factory() as bus:
             if kind == "service_daemon_reload":
                 self.check_reload_scope(action["after"])

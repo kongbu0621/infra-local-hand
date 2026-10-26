@@ -30,6 +30,15 @@ class DockerHTTPError(AdapterError):
                          "bytes": len(body), "sha256": hashlib.sha256(body).hexdigest()}
 
 
+class DockerRequestNotSent(AdapterError):
+    """Failure at a local boundary that precedes every HTTP request byte."""
+    def __init__(self, method, path, stage, error):
+        detail = str(error)[:256]
+        super().__init__(f"DOCKER_REQUEST_NOT_SENT:{stage}:{type(error).__name__}:{detail}")
+        self.request = {"method": method, "path": path, "stage": stage,
+                        "error_type": type(error).__name__, "error": detail}
+
+
 class _UnixHTTP(http.client.HTTPConnection):
     def __init__(self, path, timeout):
         super().__init__("localhost", timeout=timeout)
@@ -52,9 +61,18 @@ class DockerEngine:
     def request(self, method, path, body=None, *, missing=False):
         connection = _UnixHTTP(self.path, self.timeout)
         try:
-            raw = None if body is None else json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
-            if raw is not None and len(raw) > self.maximum:
-                raise AdapterError("DOCKER_REQUEST_BOUND")
+            try:
+                raw = None if body is None else json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
+                if raw is not None and len(raw) > self.maximum:
+                    raise AdapterError("DOCKER_REQUEST_BOUND")
+            except (TypeError, ValueError, OverflowError, RecursionError, AdapterError) as error:
+                raise DockerRequestNotSent(method, path, "encoding", error) from error
+            try:
+                # Connect explicitly: HTTPConnection.request otherwise mixes
+                # connect failures with potentially partial request transmission.
+                connection.connect()
+            except OSError as error:
+                raise DockerRequestNotSent(method, path, "connect", error) from error
             connection.request(method, "/" + self.version + path, raw,
                                {"Content-Type": "application/json", "Connection": "close"})
             response = connection.getresponse()
@@ -411,13 +429,8 @@ class GatewayAdapter:
         if "compose" in action:
             self._validate_compose(action["compose"])
 
-    def _response_closed(self, action, events):
-        """Match a saved response to this fixed mutation's preceding dispatch.
-
-        A completed failed request may have partial effects. Their identity and
-        readiness are still decided by inspect, never by this transport receipt.
-        Old successful engine_returned events remain valid completion evidence.
-        """
+    def _dispatch_identity(self, action, events):
+        """Bind one durable dispatch intent to its fixed mutation endpoint."""
         dispatched = [(index, event) for index, event in enumerate(events) if event.get("kind") == "engine_dispatch"]
         if len(dispatched) != 1:
             return False
@@ -440,6 +453,37 @@ class GatewayAdapter:
             path = "/containers/" + _quote(container) + suffix
         if any(dispatch.get(key) != value for key, value in identity.items()):
             return False
+        return index, identity, method, path
+
+    def _request_not_sent(self, action, events):
+        dispatch = self._dispatch_identity(action, events)
+        if not dispatch or any(event.get("kind") in {"engine_response", "engine_returned"} for event in events):
+            return False
+        index, identity, method, path = dispatch
+        for event in events[index + 1:]:
+            if (event.get("kind") != "engine_not_sent" or event.get("action") != action["kind"]
+                    or any(event.get(key) != value for key, value in identity.items())):
+                continue
+            request = event.get("request")
+            if (isinstance(request, dict) and request.get("method") == method and request.get("path") == path
+                    and request.get("stage") in {"encoding", "connect"}
+                    and isinstance(request.get("error_type"), str) and request["error_type"]
+                    and isinstance(request.get("error"), str)):
+                return True
+        return False
+
+    def _response_closed(self, action, events):
+        """Match a saved response to this fixed mutation's preceding dispatch.
+
+        A completed failed request may have partial effects. Their identity and
+        readiness are still decided by inspect, never by this transport receipt.
+        Old successful engine_returned events remain valid completion evidence.
+        """
+        dispatch = self._dispatch_identity(action, events)
+        if not dispatch:
+            return False
+        index, identity, method, path = dispatch
+        kind = action["kind"]
         for event in events[index + 1:]:
             if event.get("action") != kind:
                 continue
@@ -471,8 +515,9 @@ class GatewayAdapter:
         result = supervised and supervised.get("result") or {}
         events = supervised["events"] if supervised else []
         dispatch_recorded = supervised and any(event.get("kind") == "engine_dispatch" for event in events)
+        not_sent = self._request_not_sent(action, events)
         completed = (previous is None or result.get("status") == "returned" or not dispatch_recorded
-                     or self._response_closed(action, events))
+                     or not_sent or self._response_closed(action, events))
         # Engine stop/start/create may outlive a broken HTTP request. Exact
         # matching container/attempt effects are adoptable; original values alone
         # are never a retry proof following an unknown response.
@@ -514,7 +559,7 @@ class GatewayAdapter:
         return {"outcome": outcome, "postcondition": target and closed, "closed": closed,
                 "observation": value, "supervision": supervised,
                 "proof": "satisfied_observed" if target and not completed else "observed",
-                "dispatched": bool(dispatch_recorded)}
+                "dispatched": bool(dispatch_recorded and not not_sent)}
 
     def execute(self, action, *, attempt_id, lock_fd, persist_intent, previous=None):
         self._validate_action(action)
@@ -605,6 +650,15 @@ class GatewayAdapter:
         emit({"kind": "engine_dispatch", "action": kind, **identity})
         try:
             return self.engine.request(method, path, body)
+        except DockerRequestNotSent as error:
+            # A saved dispatch intent is not proof of delivery. Only the fixed
+            # encoder/connect boundaries can prove no request bytes were sent;
+            # later send/read failures still retain the original unknown call.
+            try:
+                emit({"kind": "engine_not_sent", "action": kind, **identity, "request": error.request})
+            except Exception as recording_error:
+                raise AdapterError(f"{error}; PROOF_RECORD_FAILED:{type(recording_error).__name__}") from error
+            raise
         except DockerHTTPError as error:
             # Only a full response from this mutation supplies a completion
             # receipt. Connection loss, timeout, truncation and oversized replies

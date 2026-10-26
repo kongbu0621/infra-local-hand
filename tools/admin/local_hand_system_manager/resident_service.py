@@ -97,11 +97,45 @@ class ResidentService:
         """
         self._reconcile_preparations()
 
-    def _preparation_duties(self, operation=None):
+    def _preparation_duties(self, operation=None, *, include_closed=False):
         if self.maintenance_gate is None:return []
-        return [duty for duty in self.maintenance_gate.active()
+        return [duty for duty in self.maintenance_gate.snapshot()['responsibilities'].values()
                 if duty['kind']=='prepare' and duty['binding'].get('private_root')==str(self.root)
-                and (operation is None or duty['operation_id']==operation)]
+                and (operation is None or duty['operation_id']==operation)
+                and (include_closed or duty['state']!='CLOSED')]
+
+    def _preparation_identity(self, duty):
+        binding=duty['binding'];arguments=binding.get('arguments')
+        q.require(set(binding)=={'arguments','principal_id','private_root'}
+                  and binding['private_root']==str(self.root)
+                  and type(arguments) is dict and type(binding['principal_id']) is str
+                  and 0<len(binding['principal_id'])<=256,'RESIDENT_PREPARATION_BINDING')
+        validate_tool_args('lh_job_prepare',arguments)
+        operation_id=duty['operation_id']
+        q.require(arguments['operation_id']==operation_id
+                  and duty['loaded']['component']==self.loaded_deployment['component'],
+                  'RESIDENT_PREPARATION_BINDING')
+        record=self.records.get(operation_id)
+        if record is not None:
+            q.require(record['principal_id']==binding['principal_id'],'RESIDENT_PREPARATION_OWNER')
+        attempt=Path(duty['attempt_id'])
+        q.match(attempt.name,r'attempt-[1-9][0-9]{0,19}')
+        q.require(str(attempt)==duty['attempt_id'] and attempt.parent==self.root/operation_id,
+                  'RESIDENT_PREPARATION_PATH')
+        return record,attempt
+
+    @staticmethod
+    def _not_started_proof(duty):
+        return dict(schema='local-hand-preparation-not-started/v1',admission_id=duty['id'],
+                    binding_digest=duty['binding_digest'])
+
+    def _finish_unstarted_preparation(self, duty, record):
+        repair=(record is not None and record['attempt']==duty['attempt_id'] and record['state']=='PREPARING')
+        if repair:
+            q.require(record.get('maintenance_admission',{}).get('id')==duty['id'],
+                      'RESIDENT_PREPARATION_BINDING')
+        self.maintenance_gate.finish(duty,dict(never_dispatched=True))
+        if repair:self._save(dict(record,state='FAILED'))
 
     def _reconcile_preparations(self, operation=None):
         """Recover original duties, including attempts no longer in current.json.
@@ -112,34 +146,31 @@ class ResidentService:
         Missing or inconsistent proof stays unresolved and is retryable later.
         """
         if self.worker is not None and self.worker.is_alive():return
-        for duty in self._preparation_duties(operation):
+        for duty in self._preparation_duties(operation,include_closed=True):
             try:
-                binding=duty['binding'];arguments=binding.get('arguments')
-                q.require(set(binding)=={'arguments','principal_id','private_root'}
-                          and type(arguments) is dict and type(binding['principal_id']) is str
-                          and 0<len(binding['principal_id'])<=256,'RESIDENT_PREPARATION_BINDING')
-                validate_tool_args('lh_job_prepare',arguments)
-                operation_id=duty['operation_id']
-                q.require(arguments['operation_id']==operation_id
-                          and duty['loaded']['component']==self.loaded_deployment['component'],
-                          'RESIDENT_PREPARATION_BINDING')
-                record=self.records.get(operation_id)
-                if record is not None:
-                    q.require(record['principal_id']==binding['principal_id'],'RESIDENT_PREPARATION_OWNER')
-                attempt=Path(duty['attempt_id'])
-                q.match(attempt.name,r'attempt-[1-9][0-9]{0,19}')
-                q.require(str(attempt)==duty['attempt_id'] and attempt.parent==self.root/operation_id,
-                          'RESIDENT_PREPARATION_PATH')
+                record,attempt=self._preparation_identity(duty)
+                if duty['state']=='CLOSED':
+                    # Closure and the current pointer are different durable
+                    # writes. Repair only this exact unfinished local record;
+                    # later attempts and successful preparations are untouched.
+                    if (duty['proof']=={'never_dispatched':True} and record is not None
+                            and record['attempt']==duty['attempt_id'] and record['state']=='PREPARING'):
+                        self._finish_unstarted_preparation(duty,record)
+                    continue
                 if duty['state']=='ACCEPTED':
                     # No caller crossed the durable dispatch barrier. Identity
                     # still belongs to this service and original task; only the
                     # delivery/exit evidence can be omitted for an unstarted duty.
-                    self.maintenance_gate.finish(duty,dict(never_dispatched=True))
-                    if record is not None and record['attempt']==duty['attempt_id'] and record['state']=='PREPARING':
-                        self._save(dict(record,state='FAILED'))
+                    self._finish_unstarted_preparation(duty,record)
+                    continue
+                try:unstarted=load(attempt/'preparation-not-started.json')
+                except FileNotFoundError:pass
+                else:
+                    q.require(unstarted==self._not_started_proof(duty),'RESIDENT_PREPARATION_START_PROOF')
+                    self._finish_unstarted_preparation(duty,record)
                     continue
                 serial=attempt.name.removeprefix('attempt-')
-                unit='lhprepare'+uuid.UUID(operation_id).hex+'a'+serial+'.service'
+                unit='lhprepare'+uuid.UUID(duty['operation_id']).hex+'a'+serial+'.service'
                 delivery=load(attempt/'preparation-delivery.json')
                 q.require(type(delivery) is dict,'RESIDENT_PREPARATION_DELIVERY')
                 command=delivery.get('command')
@@ -290,6 +321,18 @@ class ResidentService:
         allow_new = allow_new and args['kind'] not in DISABLED_JOB_KINDS
         with self.fence:
             record=self.records.get(operation)
+            if record is None:
+                # Admission may be the only durable identity when creating the
+                # task directory/current pointer failed. Preserve that original
+                # owner and request even after its local duty has been closed.
+                for duty in self._preparation_duties(operation,include_closed=True):
+                    self._preparation_identity(duty)
+                    binding=duty['binding'];original=binding['arguments']
+                    if binding['principal_id']!=principal:
+                        raise JobError('UNAUTHORIZED','Task owner differs')
+                    if (original['kind']!=args['kind'] or original['profile_ref']!=args['profile_ref']
+                            or original.get('inputs',{})!=args.get('inputs',{})):
+                        raise JobError('CONFLICT','Prepared task input changed; keep its original identity')
             if record is not None:
                 self._owned(operation,principal)
                 selected=record.get('request',record)
@@ -339,6 +382,12 @@ class ResidentService:
                 raise JobError('LIMIT_EXCEEDED','Retained task capacity is full')
             operation_root=self.root/operation
             used=[int(p.name.split('-')[-1]) for p in self.root.glob('*/attempt-*') if p.is_dir()]
+            # Admission can commit before mkdir/current publication fails. Its
+            # retained identity reserves the serial even without a directory.
+            # The quota sequence is global across this service's tasks.
+            for duty in self._preparation_duties(include_closed=True):
+                _,reserved=self._preparation_identity(duty)
+                used.append(int(reserved.name.removeprefix('attempt-')))
             serial=max(used,default=0)+1
             if self.config['first_project_id']+serial*7-1>self.config['last_project_id']:
                 raise JobError('LIMIT_EXCEEDED','Configured quota project range is full')
@@ -406,6 +455,7 @@ class ResidentService:
         attempt=Path(record['attempt'])
         receipt=record.get('maintenance_admission')
         delivered=False
+        waiter_exited=False
         closed=False
         try:
             extra={'workspace_inputs':record['inputs']} if record.get('kind')=='workspace.edit' else {}
@@ -428,8 +478,37 @@ class ResidentService:
             if receipt is not None:
                 self.maintenance_gate.dispatch(receipt,authorization=authorization)
             delivered=True
-            result=subprocess.run(command,stdin=subprocess.DEVNULL,capture_output=True,timeout=78,
-                                  env={'PATH':'/usr/bin:/bin'},cwd='/')
+            try:
+                process=subprocess.Popen(command,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,
+                                         stderr=subprocess.PIPE,env={'PATH':'/usr/bin:/bin'},cwd='/')
+            except OSError:
+                # Only Popen failure proves no child was returned. A capture
+                # error or timeout after this point must keep delivery unknown.
+                delivered=False
+                raise
+            try:
+                with process:
+                    try:stdout,stderr=process.communicate(timeout=78)
+                    except BaseException:
+                        process.kill()
+                        raise
+                    result=subprocess.CompletedProcess(command,process.returncode,stdout,stderr)
+                waiter_exited=True
+            except BaseException as error:
+                # The context manager has reaped the actual waiter. Capture
+                # failure is not non-delivery and does not prove its systemd
+                # unit stopped; retain only the known exit and partial streams.
+                if type(process.returncode) is int:
+                    waiter_exited=True
+                    proof=dict(returncode=process.returncode,capture_complete=False)
+                    for name in ('stdout','stderr'):
+                        partial=getattr(error,name,None)
+                        if type(partial) is bytes:
+                            proof[name]=partial[:32768].hex();proof[name+'_bytes']=len(partial)
+                    try:publish(attempt/'preparation-exit.json',proof)
+                    except (OSError,ValueError) as recording_error:
+                        error.add_note('Waiter exit proof publication failed: '+type(recording_error).__name__)
+                raise
             publish(attempt/'preparation-exit.json',dict(returncode=result.returncode,
                 stdout=result.stdout[:32768].hex(),stderr=result.stderr[:32768].hex(),
                 stdout_bytes=len(result.stdout),stderr_bytes=len(result.stderr)))
@@ -437,14 +516,20 @@ class ResidentService:
             closed=True
             with self.fence:self._ready(record)
         except BaseException as error:
+            if receipt is not None and not delivered:
+                # This includes a failed dispatch-record acknowledgement:
+                # Popen was never reached, regardless of what gate write stuck.
+                try:publish(attempt/'preparation-not-started.json',self._not_started_proof(receipt))
+                except (OSError,ValueError) as recording_error:
+                    error.add_note('No-delivery proof publication failed: '+type(recording_error).__name__)
             with self.fence:self._preparation_failed(record,error)
         finally:
             if receipt is not None:
                 try:
                     if not delivered:
                         self.maintenance_gate.finish(receipt,dict(never_dispatched=True))
-                    elif closed or unit_closed(self.config['installation']['installed']['programs']['systemctl']['path'],
-                                                record['prepare_unit']):
+                    elif closed or (waiter_exited and unit_closed(
+                            self.config['installation']['installed']['programs']['systemctl']['path'],record['prepare_unit'])):
                         self.maintenance_gate.finish(receipt,dict(process_exited=True,writers_stopped=True))
                 except (JobError,OSError,ValueError,subprocess.SubprocessError):
                     pass # Unobserved closure remains visible to deployment.
@@ -477,6 +562,7 @@ class ResidentService:
     def _preparation_failed(self, record, error):
         directory=os.open(record['attempt'],os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
         failure=dict(type=type(error).__name__,message=str(error)[:2048])
+        if getattr(error,'__notes__',None):failure['notes']=[str(note)[:2048] for note in error.__notes__[:8]]
         try:
             try:task_service.save(directory,'preparation-failure.json',failure)
             except FileExistsError:

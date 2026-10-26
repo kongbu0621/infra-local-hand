@@ -4,6 +4,7 @@ import fcntl
 import os
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -12,7 +13,7 @@ from admin.local_hand_deploy.model import PLAN_SCHEMA, digest, seal_plan
 from admin.local_hand_deploy.runtime import ConcreteEnvironment
 from admin.local_hand_deploy.services import SystemdAdapter, _link_state
 from admin.local_hand_deploy.store import Store
-from admin.local_hand_deploy.supervision import SupervisedRunner
+from admin.local_hand_deploy.supervision import AdapterError, SupervisedRunner
 from local_hand_jobs.maintenance import MaintenanceGate
 from test_local_hand_deploy_coordinator import Effects
 
@@ -101,6 +102,132 @@ class PolicySyncTests(unittest.TestCase):
     def test_failed_unlink_sync_is_read_only_observed_then_synced_without_repeating_effect(self):
         self.check_failed_sync(remove=True)
 
+    def replace_independently(self):
+        original = _link_state(self.path)
+        other = self.links / 'independent'
+        os.symlink('/fixture/unit.service', other)
+        os.replace(other, self.path)
+        current = _link_state(self.path)
+        self.assertNotEqual(original['ino'], current['ino'])
+        return current
+
+    def test_same_target_replacement_is_not_adopted_after_success_or_sync_failure(self):
+        for failed in (False, True):
+            with self.subTest(failed=failed):
+                self.path.unlink(missing_ok=True)
+                action = self.action()
+                with patch('os.fsync', side_effect=self.failing_sync if failed else self.real_sync):
+                    result = self.execute(action, 'drift-' + str(failed))
+                independent = self.replace_independently()
+                with patch('os.fsync', side_effect=AssertionError('must not sync independent object')):
+                    observed = self.adapter.observe_action(action, result['attempt'], lock_fd=self.fd)
+                    self.assertEqual('conflict', observed['outcome'])
+                    self.assertFalse(observed['postcondition'])
+                    with self.assertRaisesRegex(AdapterError, 'CONFLICT'):
+                        self.execute(action, None, previous=result['attempt'])
+                self.assertEqual(independent, _link_state(self.path))
+                self.path.unlink()
+
+    def test_lost_effect_event_without_success_receipt_does_not_claim_visible_link(self):
+        action = self.action()
+        perform = self.adapter._perform
+        def lose_event(action, emit):
+            return perform(action, lambda event: None if event['kind'] == 'policy_link_effect' else emit(event))
+        with patch.object(self.adapter, '_perform', side_effect=lose_event), \
+                patch('os.fsync', side_effect=self.failing_sync):
+            result = self.execute(action, 'lost-effect')
+        self.assertEqual('unknown', result['outcome'])
+        original = _link_state(self.path)
+        with patch('os.fsync', side_effect=AssertionError('missing ownership')), \
+                patch('os.symlink', side_effect=AssertionError('must not relink')):
+            resumed = self.execute(action, None, previous=result['attempt'])
+        self.assertEqual('unknown', resumed['outcome'])
+        self.assertFalse(resumed['postcondition'])
+        self.assertEqual(original, _link_state(self.path))
+        with patch.object(self.adapter, 'observe', return_value={'units': {}, 'jobs': []}), \
+                self.assertRaisesRegex(AdapterError, 'RESTORE_POLICY_LINK'):
+            self.concrete().prepare_compensation(self.operation(action, result))
+
+    def test_legacy_success_receipt_without_effect_event_still_binds_exact_link(self):
+        action = self.action()
+        result = self.execute(action, 'legacy-success')
+        observe = self.adapter.runner.observe
+        def legacy(binding, **kwargs):
+            return {**observe(binding, **kwargs), 'events': []}
+        with patch.object(self.adapter.runner, 'observe', side_effect=legacy), \
+                patch('os.fsync', side_effect=AssertionError('receipt already proves sync')):
+            self.assertTrue(self.execute(action, None, previous=result['attempt'])['postcondition'])
+            self.replace_independently()
+            self.assertEqual('conflict', self.adapter.observe_action(action, result['attempt'], lock_fd=self.fd)['outcome'])
+
+    def operation(self, action, result, *, inherited=None):
+        return {'id': 'fixture', 'inherited': inherited or [],
+            'plan': {'steps': [{'id': 'policy', 'kind': 'service', 'action': action}]},
+            'steps': [{'prepared': action, 'effective': True, 'state': 'INTENT_RECORDED',
+                       'attempts': [{'binding': result['attempt']['binding']}]}]}
+
+    def concrete(self, origins=None):
+        store = SimpleNamespace(lock_fd=self.fd, get=(origins or {}).__getitem__)
+        environment = ConcreteEnvironment({'profile': {}}, store, None)
+        environment._services = self.adapter
+        environment._runner = self.adapter.runner
+        return environment
+
+    def test_production_compensation_rejects_replaced_link_after_success_or_sync_failure(self):
+        for failed in (False, True):
+            with self.subTest(failed=failed):
+                self.path.unlink(missing_ok=True)
+                action = self.action()
+                with patch('os.fsync', side_effect=self.failing_sync if failed else self.real_sync):
+                    result = self.execute(action, 'compensate-drift-' + str(failed))
+                independent = self.replace_independently()
+                environment = self.concrete()
+                with patch.object(self.adapter, 'observe', return_value={'units': {}, 'jobs': []}), \
+                        self.assertRaisesRegex(AdapterError, 'RESTORE_POLICY_LINK'):
+                    environment.prepare_compensation(self.operation(action, result))
+                self.assertEqual(independent, _link_state(self.path))
+                self.path.unlink()
+
+    def test_production_compensation_carries_exact_owned_link(self):
+        action = self.action()
+        with patch('os.fsync', side_effect=self.failing_sync):
+            result = self.execute(action, 'owned-effect')
+        owned = _link_state(self.path)
+        with patch.object(self.adapter, 'observe', return_value={'units': {}, 'jobs': []}):
+            actions = self.concrete().prepare_compensation(self.operation(action, result))
+        self.assertEqual(1, len(actions))
+        self.assertEqual(owned, actions[0]['prepared']['before'])
+        restored = self.execute(actions[0]['prepared'], 'owned-restoration')
+        self.assertTrue(restored['postcondition'])
+        self.assertEqual({'kind': 'absent'}, _link_state(self.path))
+
+    def test_inherited_compensation_preserves_latest_identity_and_pending_sync(self):
+        original = self.action(remove=True)
+        removed = self.execute(original, 'forward-remove')
+        restore = {**original, 'before': {'kind': 'absent'},
+                   'after': {'kind': 'link', 'target': '/fixture/unit.service'}}
+        with patch('os.fsync', side_effect=self.failing_sync):
+            restored = self.execute(restore, 'restore-create')
+        owned = _link_state(self.path)
+        origin = self.operation(original, removed)
+        origin['compensation'] = [{'step': {'id': 'restore', 'kind': 'service', 'action': restore},
+            'record': {'effective': False, 'state': 'INTENT_RECORDED', 'restore': restore,
+                       'restore_attempts': [{'binding': restored['attempt']['binding']}]}}]
+        successor = {'id': 'successor', 'inherited': ['original'], 'plan': {'steps': []}, 'steps': []}
+        environment = self.concrete({'original': origin})
+        with patch.object(self.adapter, 'observe', return_value={'units': {}, 'jobs': []}):
+            actions = environment.prepare_compensation(successor)
+            self.assertEqual(1, len(actions), 'inherited pending sync must survive restoration planning')
+            self.assertEqual(owned, actions[0]['prepared']['before'])
+            with patch('os.symlink', side_effect=AssertionError('must only sync')), \
+                    patch('os.unlink', side_effect=AssertionError('must only sync')):
+                final = self.execute(actions[0]['prepared'], None)
+            self.assertTrue(final['postcondition'])
+            independent = self.replace_independently()
+            with self.assertRaisesRegex(AdapterError, 'RESTORE_POLICY_LINK'):
+                environment.prepare_compensation(successor)
+        self.assertEqual(independent, _link_state(self.path))
+
     def check_failed_sync(self, *, remove):
         action = self.action(remove=remove)
         with patch('os.fsync', side_effect=self.failing_sync):
@@ -162,6 +289,37 @@ class PolicySyncTests(unittest.TestCase):
         self.assertEqual('VERIFIED', final['steps'][0]['state'])
         self.assertTrue(final['steps'][0]['observation']['synced'])
         self.assertEqual(1, len(final['steps'][0]['attempts']))
+        self.assertEqual(original, _link_state(self.path))
+
+    def test_covered_earlier_link_step_cannot_bypass_later_pending_sync(self):
+        remove = self.action(remove=True)
+        coordinator, store, environment, plan = self.coordinator(remove)
+        create = {**remove, 'before': {'kind': 'absent'},
+                  'after': {'kind': 'link', 'target': '/fixture/unit.service'}}
+        plan.pop('digest')
+        plan['steps'].append({'id': 'create', 'kind': 'service', 'action': create})
+        plan = seal_plan(plan)
+        def fail_after_create(fd):
+            return self.failing_sync(fd) if self.path.is_symlink() else self.real_sync(fd)
+        with patch('os.fsync', side_effect=fail_after_create):
+            interrupted = coordinator.apply(plan)
+        self.assertIsNone(interrupted['decision'])
+        self.assertEqual('VERIFIED', interrupted['steps'][0]['state'])
+        self.assertFalse(interrupted['steps'][1]['observation']['synced'])
+        original = _link_state(self.path)
+        with patch('os.fsync', side_effect=self.failing_sync), \
+                patch('os.symlink', side_effect=AssertionError('must not relink')), \
+                patch('os.unlink', side_effect=AssertionError('must not unlink')):
+            waiting = coordinator.resume(interrupted['id'])
+        self.assertEqual('create', waiting['steps'][0]['covered_by'])
+        self.assertIsNone(waiting['decision'])
+        self.assertNotEqual('VERIFIED', waiting['steps'][1]['state'])
+        with patch('os.symlink', side_effect=AssertionError('must not relink')), \
+                patch('os.unlink', side_effect=AssertionError('must not unlink')):
+            final = coordinator.resume(interrupted['id'])
+        self.assertEqual('COMMITTED', final['decision'])
+        self.assertTrue(final['steps'][1]['observation']['synced'])
+        self.assertEqual([1, 1], [len(record['attempts']) for record in final['steps']])
         self.assertEqual(original, _link_state(self.path))
 
     def test_compensation_does_not_finish_until_removed_link_is_synced(self):

@@ -1,5 +1,6 @@
 """Retained preparation decisions cross the real coordinator/gate boundary."""
 import copy
+from pathlib import Path
 import time
 import unittest
 from unittest.mock import patch
@@ -187,3 +188,181 @@ class PreparationRetentionTests(unittest.TestCase):
             with self.assertRaisesRegex(Exception, "queued system job"):
                 preparations.observe_reboot_closure(profile, "manager", expected_boot=old_boot,
                                                    current_boot=startup.boot_id())
+
+    def preparation_duty(self, *, dispatched=False, wrong_root=False):
+        f = self.f
+        root = Path(f.old_config['private_root'])
+        operation = self.operation if dispatched else '22222222-2222-4222-8222-222222222222'
+        attempt = root / operation / 'attempt-1'
+        binding = {'private_root': str(root / 'foreign' if wrong_root else root),
+                   'principal_id': 'owner', 'arguments': {'operation_id': operation,
+                   'kind': 'host.inspect', 'profile_ref': 'fixture'}}
+        loaded = dict(self.loaded, boot_id='11111111-1111-4111-8111-111111111111')
+        receipt = f.gate.accept('prepare', operation, str(attempt), binding, loaded)
+        if dispatched:
+            attempt.mkdir(mode=0o700)
+            unit = 'lhprepare' + operation.replace('-', '') + 'a1.service'
+            f.write(attempt / 'preparation-delivery.json', {'command': ['systemd-run', '--unit=' + unit,
+                    str(attempt / 'input.json'), str(attempt / 'result.json')]})
+            self.record['principal_id'] = 'owner'
+            f.write(self.record_path, self.record)
+            f.gate.dispatch(receipt)
+        plan = build_plan(f.manifest)
+        environment = ConcreteEnvironment(plan, self.store, f.gate)
+        f.gate.close('drain-orphan', expected=f.gate.snapshot())
+        return receipt, environment
+
+    def test_reboot_drain_closes_accepted_duty_without_a_current_pointer(self):
+        receipt, environment = self.preparation_duty()
+        with patch.object(environment, '_probe', side_effect=AssertionError('manager is stopped')), \
+                patch.object(preparations, 'observe_reboot_closure', side_effect=AssertionError('never dispatched')):
+            result = environment.drain({'id': 'drain-orphan'})
+        self.assertTrue(result['quiescent'])
+        duty = self.f.gate.snapshot()['responsibilities'][receipt['id']]
+        self.assertEqual({'never_dispatched': True}, duty['proof'])
+        self.assertFalse(Path(receipt['attempt_id']).exists())
+
+    def test_reboot_drain_uses_original_attempt_after_current_pointer_advanced(self):
+        receipt, environment = self.preparation_duty(dispatched=True)
+        original = self.record_path.read_bytes()
+        with patch.object(environment, '_probe', side_effect=AssertionError('manager is stopped')), \
+                patch.object(preparations, 'observe_reboot_closure', return_value={'original_parents_empty': True}) as observe:
+            self.assertTrue(environment.drain({'id': 'drain-orphan'})['quiescent'])
+        observe.assert_called_once()
+        self.assertEqual(original, self.record_path.read_bytes())
+        self.assertEqual({'process_exited': True, 'writers_stopped': True},
+                         self.f.gate.snapshot()['responsibilities'][receipt['id']]['proof'])
+
+    def test_reboot_drain_rejects_a_foreign_preparation_root(self):
+        receipt, environment = self.preparation_duty(wrong_root=True)
+        with self.assertRaisesRegex(Exception, 'binding'):
+            environment.drain({'id': 'drain-orphan'})
+        self.assertEqual('ACCEPTED', self.f.gate.snapshot()['responsibilities'][receipt['id']]['state'])
+
+    def test_reboot_drain_does_not_close_on_failed_old_process_observation(self):
+        receipt, environment = self.preparation_duty(dispatched=True)
+        with patch.object(preparations, 'observe_reboot_closure', side_effect=RuntimeError('queued original job')):
+            with self.assertRaisesRegex(RuntimeError, 'queued original job'):
+                environment.drain({'id': 'drain-orphan'})
+        self.assertEqual('DISPATCHING', self.f.gate.snapshot()['responsibilities'][receipt['id']]['state'])
+        with patch.object(preparations, 'observe_reboot_closure', return_value={'original_parents_empty': True}):
+            self.assertTrue(environment.drain({'id': 'drain-orphan'})['quiescent'])
+
+    def test_reboot_drain_requires_the_original_delivery_and_owner(self):
+        receipt, environment = self.preparation_duty(dispatched=True)
+        delivery = Path(receipt['attempt_id']) / 'preparation-delivery.json'
+        original = delivery.read_bytes()
+        for invalid in ({'command': ['systemd-run', '--unit=other.service']}, None):
+            self.f.write(delivery, invalid)
+            with self.assertRaisesRegex(Exception, 'binding'):
+                environment.drain({'id': 'drain-orphan'})
+            self.assertEqual('DISPATCHING', self.f.gate.snapshot()['responsibilities'][receipt['id']]['state'])
+        delivery.write_bytes(original)
+        self.f.write(self.record_path, {**self.record, 'principal_id': 'another-owner'})
+        with self.assertRaisesRegex(Exception, 'binding'):
+            environment.drain({'id': 'drain-orphan'})
+        self.assertEqual('DISPATCHING', self.f.gate.snapshot()['responsibilities'][receipt['id']]['state'])
+
+    def half_created_preparation(self, *, serial=1, principal='owner', wrong_root=False):
+        root = Path(self.f.old_config['private_root'])
+        operation = '33333333-3333-4333-8333-333333333333'
+        directory = root / operation
+        directory.mkdir(mode=0o700, exist_ok=True)
+        attempt = directory / ('attempt-' + str(serial))
+        attempt.mkdir(mode=0o700)
+        binding = {'private_root': str(root / 'foreign' if wrong_root else root),
+                   'principal_id': principal, 'arguments': {'operation_id': operation,
+                   'kind': 'host.inspect', 'profile_ref': 'fixture'}}
+        loaded = dict(self.loaded, boot_id='11111111-1111-4111-8111-111111111111')
+        return self.f.gate.accept('prepare', operation, str(attempt), binding, loaded)
+
+    def test_half_created_preparations_cross_actual_apply_without_fabricating_current(self):
+        old = self.half_created_preparation()
+        self.f.gate.finish(old, {'never_dispatched': True})
+        accepted = self.half_created_preparation(serial=2)
+        originals = self.record_path.read_bytes(), self.launch_path.read_bytes()
+        before = preparations.inventory(self.f.profile)
+        items = [item for item in before['tasks'] if item['operation_id'] == accepted['operation_id']]
+        self.assertEqual({old['id'], accepted['id']}, {item['admission_id'] for item in items})
+        self.assertTrue(all(item['record_source'] == 'admission' and item['state'] == 'PREPARING' for item in items))
+        plan = build_plan(self.f.manifest)
+        with patch.object(preparations, 'observe_reboot_closure', side_effect=AssertionError('never dispatched')):
+            result = self.coordinator(plan).apply(plan)
+        self.assertEqual('COMMITTED', result['decision'])
+        self.assertTrue(result['released'], result['waiting'])
+        self.assertEqual('OPEN', self.f.gate.snapshot()['state'])
+        self.assertEqual({'never_dispatched': True}, self.f.gate.snapshot()['responsibilities'][accepted['id']]['proof'])
+        self.assertEqual(before['tasks'], preparations.inventory(self.f.profile)['tasks'])
+        self.assertFalse((Path(accepted['attempt_id']).parent / 'current.json').exists())
+        self.assertEqual([], list(Path(accepted['attempt_id']).iterdir()))
+        self.assertEqual(originals, (self.record_path.read_bytes(), self.launch_path.read_bytes()))
+        self.assertEqual([self.operation], [item['operation_id'] for item in result['checks']['released_compatibility']])
+
+    def test_missing_current_does_not_hide_an_unmatched_attempt(self):
+        receipt = self.half_created_preparation()
+        (Path(receipt['attempt_id']).parent / 'attempt-2').mkdir(mode=0o700)
+        with self.assertRaisesRegex(Exception, 'Original preparation'):
+            build_plan(self.f.manifest)
+        self.assertEqual('ACCEPTED', self.f.gate.snapshot()['responsibilities'][receipt['id']]['state'])
+
+    def test_missing_current_does_not_hide_dispatched_or_completed_attempt(self):
+        receipt = self.half_created_preparation()
+        self.f.gate.dispatch(receipt)
+        with self.assertRaisesRegex(Exception, 'Original preparation'):
+            build_plan(self.f.manifest)
+        self.f.gate.finish(receipt, {'process_exited': True, 'writers_stopped': True})
+        with self.assertRaisesRegex(Exception, 'Original preparation'):
+            build_plan(self.f.manifest)
+
+    def test_missing_current_still_requires_one_original_principal_and_root(self):
+        self.half_created_preparation()
+        self.half_created_preparation(serial=2, principal='other')
+        with self.assertRaisesRegex(Exception, 'Original preparation'):
+            build_plan(self.f.manifest)
+
+    def test_missing_current_inventory_limits_admission_count(self):
+        self.half_created_preparation()
+        with patch.object(preparations, 'MAX_ORPHAN_ENTRIES', 0), \
+                self.assertRaisesRegex(Exception, 'budget'):
+            build_plan(self.f.manifest)
+
+    def test_missing_current_rejects_a_foreign_root(self):
+        receipt = self.half_created_preparation(wrong_root=True)
+        with self.assertRaisesRegex(Exception, 'binding'):
+            build_plan(self.f.manifest)
+        # The original binding remains foreign even if its task directory is
+        # present; do not repair it from today's configuration.
+        self.assertEqual('ACCEPTED', self.f.gate.snapshot()['responsibilities'][receipt['id']]['state'])
+
+    def test_missing_current_never_ignores_files_inside_an_unstarted_attempt(self):
+        receipt = self.half_created_preparation()
+        original = Path(receipt['attempt_id']) / 'result.json'
+        self.f.write(original, {'unexpected': 'retained bytes'})
+        saved = original.read_bytes()
+        with self.assertRaisesRegex(Exception, 'unexplained attempt content'):
+            build_plan(self.f.manifest)
+        self.assertEqual(saved, original.read_bytes())
+
+    def test_original_attempt_does_not_adopt_a_conflicting_current_boot(self):
+        receipt, environment = self.preparation_duty(dispatched=True)
+        self.f.write(self.record_path, {**self.record, 'attempt': receipt['attempt_id'],
+                                       'boot_id': startup.boot_id()})
+        with patch.object(preparations, 'observe_reboot_closure', side_effect=AssertionError('identity mismatch')):
+            with self.assertRaisesRegex(Exception, 'binding'):
+                environment.drain({'id': 'drain-orphan'})
+        self.assertEqual('DISPATCHING', self.f.gate.snapshot()['responsibilities'][receipt['id']]['state'])
+
+    def test_missing_current_rejects_any_retained_execution_history(self):
+        receipt = self.half_created_preparation()
+        prepared = dict(self.prepared, operation_id=receipt['operation_id'], attempt_id=receipt['attempt_id'],
+                        boot_id=receipt['loaded']['boot_id'])
+        execution = self.f.gate.accept('execute', receipt['operation_id'], 'old-execution', {'prepared': prepared},
+                                       receipt['loaded'], prepared=prepared)
+        for state in ('ACCEPTED', 'DISPATCHING', 'CLOSED'):
+            with self.subTest(state=state):
+                if state == 'DISPATCHING':
+                    self.f.gate.dispatch(execution)
+                elif state == 'CLOSED':
+                    self.f.gate.finish(execution, {'process_exited': True, 'writers_stopped': True})
+                with self.assertRaisesRegex(Exception, 'retained execution history'):
+                    build_plan(self.f.manifest)

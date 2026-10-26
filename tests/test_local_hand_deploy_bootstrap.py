@@ -219,6 +219,29 @@ class BootstrapTests(unittest.TestCase):
         self.bus.units["old-prepared.service"] = copy.deepcopy(self.bus.units["old.service"])
         return output, launch_path
 
+    def test_old_preparation_boot_is_bound_to_its_attempt_not_current_pointer(self):
+        from admin.local_hand_deploy import preparations
+        directory, current, _ = self.record()
+        old = directory / 'attempt-2'; old.mkdir(mode=0o700)
+        self.write(old / 'preparation-delivery.json', {'command': ['systemd-run', '--unit=old-prepare.service']})
+        profile = copy.deepcopy(self.profile)
+        profile['guarded_components']['manager']['configuration'] = str(self.legacy_config)
+        old_boot = '11111111-1111-4111-8111-111111111111'
+        original = (directory / 'current.json').read_bytes()
+        with patch.object(bootstrap, 'OfflineObserver', return_value=self.observer):
+            proof = preparations.observe_reboot_closure(profile, 'manager', expected_boot=old_boot,
+                current_boot=startup.boot_id(), preparation_boots={str(old): old_boot})
+            self.assertEqual(2, proof['duties']['attempts'])
+            self.assertEqual(original, (directory / 'current.json').read_bytes())
+            self.assertFalse((old / 'preparation-exit.json').exists())
+            (current / 'preparation-exit.json').unlink()
+            with self.assertRaisesRegex(DeployError, 'delivery is not closed'):
+                preparations.observe_reboot_closure(profile, 'manager', expected_boot=old_boot,
+                    current_boot=startup.boot_id(), preparation_boots={str(old): old_boot})
+            with self.assertRaisesRegex(DeployError, 'boot binding conflicts'):
+                preparations.observe_reboot_closure(profile, 'manager', expected_boot=old_boot,
+                    current_boot=startup.boot_id(), preparation_boots={str(old): old_boot, str(current): old_boot})
+
     def test_plan_read_only_and_import_stopped_guarded_baseline(self):
         before = {str(path): (path.lstat().st_ino, path.lstat().st_mtime_ns) for path in self.root.rglob("*")}
         plan = self.plan()
