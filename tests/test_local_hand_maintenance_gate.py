@@ -296,6 +296,140 @@ class RuntimeGateTests(unittest.TestCase):
             service=resident_service.ResidentService(config)
         return service
 
+    def retry_service(self):
+        # Match the ordinary-user protected-input fixture in PreparationTests;
+        # the gate, attempt files, current pointer and worker remain real.
+        self.enterContext(patch.object(resident_service,'load',
+            side_effect=lambda path:json.loads(Path(path).read_text())))
+        service=self.resident()
+        service.config['installation'].update(source={'root':'/synthetic'})
+        service.config['installation']['installed'].update(package_root='/synthetic',
+            programs={name:{'path':'/synthetic/'+name} for name in ('systemd_run','systemctl','python')})
+        return service
+
+    def failed_preparation_with_unclosed_duty(self,service):
+        request=dict(action='prepare',operation_id=str(uuid.uuid4()),kind='host.inspect',
+                     profile_ref='fixture',principal_id='owner')
+        with patch.object(resident_service.provision_task,'task_input',return_value={}), \
+                patch.object(resident_service.subprocess,'run',
+                    return_value=subprocess.CompletedProcess([],1,b'',b'failed preparation')), \
+                patch.object(resident_service,'unit_closed',return_value=True), \
+                patch.object(self.gate,'finish',side_effect=OSError('temporary gate record outage')):
+            service.call(request);service.worker.join(3)
+            self.assertFalse(service.worker.is_alive())
+        original=service.records[request['operation_id']]
+        self.assertEqual('FAILED',original['state'])
+        self.assertEqual('DISPATCHING',self.gate.active()[0]['state'])
+        self.assertTrue((Path(original['attempt'])/'preparation-exit.json').exists())
+        return request,original
+
+    def test_retry_closes_original_preparation_duty_before_replacing_current(self):
+        service=self.retry_service()
+        request,original=self.failed_preparation_with_unclosed_duty(service)
+        exit_path=Path(original['attempt'])/'preparation-exit.json';before=exit_path.read_bytes()
+        with patch.object(service,'_preparation_active',return_value=False), \
+                patch.object(resident_service,'unit_closed',return_value=True), \
+                patch.object(resident_service.provision_task,'task_input',side_effect=OSError('before dispatch')):
+            service.call(dict(request,retry_failed=True));service.worker.join(3)
+            self.assertFalse(service.worker.is_alive())
+        self.assertNotEqual(original['attempt'],service.records[request['operation_id']]['attempt'])
+        self.assertEqual([],self.gate.active())
+        self.assertEqual(before,exit_path.read_bytes())
+        closed=self.gate.snapshot()['responsibilities'][original['maintenance_admission']['id']]
+        self.assertEqual({'process_exited':True,'writers_stopped':True},closed['proof'])
+
+    def test_orphan_preparation_duty_recovers_after_manager_restart(self):
+        service=self.retry_service()
+        request,original=self.failed_preparation_with_unclosed_duty(service)
+        # Reproduce an already-persisted pointer overwrite from the old code.
+        # This must remain recoverable even after the prevention fix is installed.
+        attempt=service.root/request['operation_id']/'attempt-2';attempt.mkdir()
+        receipt=self.gate.accept('prepare',request['operation_id'],str(attempt),
+            dict(arguments={k:v for k,v in request.items() if k not in {'action','principal_id'}},
+                 principal_id='owner',private_root=str(service.root)),service.loaded_deployment)
+        self.gate.finish(receipt,dict(never_dispatched=True))
+        service._save(dict(original,attempt=str(attempt),serial=2,maintenance_admission=receipt,
+                           prepare_unit='lhprepare'+uuid.UUID(request['operation_id']).hex+'a2.service'))
+        self.gate.close('deploy')
+        with patch.object(resident_service.maintenance,'from_config',return_value=self.gate), \
+                patch.object(resident_service.budget,'current_clock',return_value={'boot_id':'test-boot'}):
+            restarted=resident_service.ResidentService(service.config)
+        with patch.object(resident_service,'unit_closed',return_value=True) as observed:
+            restarted.recover_undispatched()
+            restarted.deployment_status()
+        self.assertEqual([],self.gate.active())
+        observed.assert_called_once_with('/synthetic/systemctl',original['prepare_unit'])
+        self.assertEqual(str(attempt),restarted.records[request['operation_id']]['attempt'])
+        self.assertEqual('CLOSED',self.gate.snapshot()['state'])
+
+    def test_retry_preserves_current_pointer_until_original_unit_is_closed(self):
+        service=self.retry_service()
+        request,original=self.failed_preparation_with_unclosed_duty(service)
+        pointer=service.root/request['operation_id']/'current.json';before=pointer.read_bytes()
+        with patch.object(service,'_preparation_active',return_value=False), \
+                patch.object(resident_service,'unit_closed',return_value=False), \
+                patch.object(service,'_prepare_worker') as worker:
+            with self.assertRaises(JobError) as denied:service.call(dict(request,retry_failed=True))
+            self.assertEqual('IO_UNCERTAIN',denied.exception.code)
+            worker.assert_not_called()
+        self.assertEqual(before,pointer.read_bytes())
+        self.assertEqual([original['maintenance_admission']['id']],[duty['id'] for duty in self.gate.active()])
+        with patch.object(service,'_preparation_active',return_value=False), \
+                patch.object(resident_service,'unit_closed',return_value=True), \
+                patch.object(resident_service.provision_task,'task_input',side_effect=OSError('before dispatch')):
+            service.call(dict(request,retry_failed=True));service.worker.join(3)
+            self.assertFalse(service.worker.is_alive())
+        self.assertEqual([],self.gate.active())
+
+    def test_preparation_recovery_requires_original_delivery_and_exit_evidence(self):
+        service=self.retry_service()
+        _,original=self.failed_preparation_with_unclosed_duty(service)
+        attempt=Path(original['attempt'])
+        delivery=attempt/'preparation-delivery.json';exit_path=attempt/'preparation-exit.json'
+        delivery_bytes=delivery.read_bytes();exit_bytes=exit_path.read_bytes()
+        wrong_unit=json.loads(delivery_bytes)
+        wrong_unit['command']=['--unit=another.service' if arg.startswith('--unit=') else arg
+                               for arg in wrong_unit['command']]
+        wrong_attempt=json.loads(delivery_bytes)
+        wrong_attempt['command'][-2:]=[str(attempt.parent/'attempt-2'/'input.json'),
+                                      str(attempt.parent/'attempt-2'/'result.json')]
+        cases=[(delivery,json.dumps(wrong_unit).encode()),(delivery,json.dumps(wrong_attempt).encode()),
+               (delivery,b'[]'),(exit_path,None),(exit_path,b'{"returncode":true}'),
+               (exit_path,b'[]'),(exit_path,b'{')]
+        for target,raw in cases:
+            with self.subTest(path=target.name,raw=raw):
+                delivery.write_bytes(delivery_bytes);exit_path.write_bytes(exit_bytes)
+                if raw is None:target.unlink()
+                else:target.write_bytes(raw)
+                with patch.object(resident_service,'unit_closed',return_value=True) as observer:
+                    service.deployment_status()
+                    observer.assert_not_called()
+                self.assertEqual(1,len(self.gate.active()))
+        delivery.write_bytes(delivery_bytes);exit_path.write_bytes(exit_bytes)
+        with patch.object(resident_service,'unit_closed',return_value=True) as observer:
+            service.deployment_status()
+            observer.assert_called_once_with('/synthetic/systemctl',original['prepare_unit'])
+        self.assertEqual([],self.gate.active())
+
+    def test_pre_dispatch_failure_with_lost_closure_retries_without_exit_record(self):
+        service=self.retry_service()
+        request=dict(action='prepare',operation_id=str(uuid.uuid4()),kind='host.inspect',
+                     profile_ref='fixture',principal_id='owner')
+        with patch.object(resident_service.provision_task,'task_input',side_effect=OSError('before dispatch')), \
+                patch.object(self.gate,'finish',side_effect=OSError('temporary gate record outage')):
+            service.call(request);service.worker.join(3)
+            self.assertFalse(service.worker.is_alive())
+        original=service.records[request['operation_id']]
+        self.assertEqual('ACCEPTED',self.gate.active()[0]['state'])
+        self.assertFalse((Path(original['attempt'])/'preparation-exit.json').exists())
+        with patch.object(resident_service.provision_task,'task_input',side_effect=OSError('before dispatch')), \
+                patch.object(resident_service,'unit_closed') as observer:
+            service.call(dict(request,retry_failed=True));service.worker.join(3)
+            self.assertFalse(service.worker.is_alive());observer.assert_not_called()
+        self.assertEqual([],self.gate.active())
+        closed=self.gate.snapshot()['responsibilities'][original['maintenance_admission']['id']]
+        self.assertEqual({'never_dispatched':True},closed['proof'])
+
     def test_resident_closed_prepare_has_no_attempt_or_thread(self):
         service=self.resident()
         request=dict(action='prepare',operation_id=str(uuid.uuid4()),kind='host.inspect',profile_ref='fixture',principal_id='owner')
@@ -325,16 +459,31 @@ class RuntimeGateTests(unittest.TestCase):
 
     def test_recovery_closes_only_undispatched_original_service_responsibilities(self):
         service=self.resident()
-        receipt=self.gate.accept('prepare','task-one','lost-before-current-json',
-            dict(private_root=str(service.root)),service.loaded_deployment)
-        unknown=self.gate.accept('prepare','task-two','delivery-unknown',
-            dict(private_root=str(service.root)),service.loaded_deployment)
+        def accepted(*,root=service.root,component='manager',wrong_arguments=False,wrong_path=False):
+            operation=str(uuid.uuid4())
+            arguments=dict(operation_id=str(uuid.uuid4()) if wrong_arguments else operation,
+                           kind='host.inspect',profile_ref='fixture')
+            attempt=root/(str(uuid.uuid4()) if wrong_path else operation)/'attempt-1'
+            binding=dict(private_root=str(root),principal_id='owner',arguments=arguments)
+            return self.gate.accept('prepare',operation,str(attempt),binding,
+                                    dict(service.loaded_deployment,component=component))
+        receipt=accepted()
+        unknown=accepted()
         self.gate.dispatch(unknown)
-        foreign=self.gate.accept('prepare','task-three','other-service',
-            dict(private_root='/different-service'),service.loaded_deployment)
+        foreign=accepted(root=Path('/different-service'))
+        other_component=accepted(component='another-manager')
+        wrong_arguments=accepted(wrong_arguments=True)
+        wrong_path=accepted(wrong_path=True)
+        wrong_owner=accepted()
+        service.records[wrong_owner['operation_id']]=dict(principal_id='someone-else',
+                                                         attempt=wrong_owner['attempt_id'],state='FAILED')
+        # Recovery is custody of the original accepted attempt. Revoking new
+        # admission must not erase its original identity or block its closure.
+        service.config['principals']=[]
         self.gate.close('deploy')
         service.recover_undispatched()
-        self.assertEqual({unknown['id'],foreign['id']},{item['id'] for item in self.gate.active()})
+        unresolved=(unknown,foreign,other_component,wrong_arguments,wrong_path,wrong_owner)
+        self.assertEqual({item['id'] for item in unresolved},{item['id'] for item in self.gate.active()})
         self.assertEqual('CLOSED',self.gate.snapshot()['responsibilities'][receipt['id']]['state'])
 
     def test_loaded_status_is_actual_snapshot_and_instance_without_new_work(self):

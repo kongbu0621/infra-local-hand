@@ -315,6 +315,16 @@ class Coordinator:
         if digest(op["compensation"]) != original:
             self.store.save(op, "RESTORATION_RECONCILED", recovery=not self._unresolved(op))
 
+    @staticmethod
+    def _requires_sync(step):
+        return step["kind"] == "file" or (step["kind"] == "service"
+                and step["action"].get("kind") == "service_policy_link")
+
+    @classmethod
+    def _step_complete(cls, step, observed):
+        return (observed.get("state") == "target" and observed.get("closed") is True
+                and (not cls._requires_sync(step) or observed.get("synced") is True))
+
     def _step(self, op, step, record, *, restore=False):
         if not restore and record.get("covered_by"):
             return True
@@ -332,13 +342,14 @@ class Coordinator:
         self.store.save(op, "OBSERVATION", {"step": step["id"], "restore": restore},
                         recovery=restore and observed.get("closed") is True)
         if observed.get("state") == "target" and observed.get("closed") is True:
-            # A published file can still need its directory sync after a crash.
-            if step["kind"] == "file" and observed.get("synced") is not True:
+            # File publication and service policy links can be visible before
+            # their required directory sync completed. Observations stay read-only.
+            if self._requires_sync(step) and observed.get("synced") is not True:
                 op["record_budget"] = self.store.check_attempt_budget(op, restore=restore)
                 self.store.save(op, "SYNC_INTENT", {"step": step["id"], "restore": restore}, recovery=restore)
                 observed = self.environment.execute(step, record[key], op, None, lambda _: None, previous=previous)
                 record[observation_key] = observed
-                if observed.get("state") != "target" or observed.get("closed") is not True:
+                if not self._step_complete(step, observed):
                     self._wait(op, "SYNC_PENDING", {"step": step["id"]})
                     return False
             record["state"] = "RESTORED" if restore else "VERIFIED"
@@ -372,7 +383,7 @@ class Coordinator:
         if not restore:
             record["effective"] = record["effective"] or observed.get("effective", False)
         self.store.save(op, "ACTION_RETURNED", {"step": step["id"], "attempt_id": attempt_id}, recovery=restore)
-        if observed.get("state") == "target" and observed.get("closed") is True:
+        if self._step_complete(step, observed):
             record["state"] = "RESTORED" if restore else "VERIFIED"
             self.store.save(op, "RESTORED_STEP" if restore else "VERIFIED_STEP", {"step": step["id"]}, recovery=restore)
             return True

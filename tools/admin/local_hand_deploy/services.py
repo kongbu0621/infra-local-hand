@@ -93,6 +93,26 @@ def _link_state(path):
     return {"kind": "link", "target": os.readlink(path), "dev": info.st_dev, "ino": info.st_ino}
 
 
+def _sync_link_directory(path, expected):
+    """Finish only the directory sync; never repeat a link/unlink effect."""
+    path = Path(path)
+    parent = path.parent.lstat()
+    if not stat.S_ISDIR(parent.st_mode) or parent.st_uid != os.geteuid() or parent.st_mode & 0o022:
+        raise AdapterError("ENABLE_LINK_PARENT")
+    fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        held = os.fstat(fd)
+        if (held.st_dev, held.st_ino) != (parent.st_dev, parent.st_ino) or _link_state(path) != expected:
+            raise AdapterError("ENABLE_LINK_CHANGED")
+        os.fsync(fd)
+        current = path.parent.lstat()
+        if (current.st_dev, current.st_ino) != (held.st_dev, held.st_ino) or _link_state(path) != expected:
+            raise AdapterError("ENABLE_LINK_CHANGED")
+        return expected
+    finally:
+        os.close(fd)
+
+
 def validate_guard(value, target, *, attempt_id=None, allow_stopped=False):
     if not isinstance(value, dict) or not all(_hex(value.get(k)) for k in
                                               ("descriptor_digest", "config_digest", "deployment_digest")):
@@ -342,8 +362,13 @@ class SystemdAdapter:
             actual = _link_state(action["path"])
             target = actual["kind"] == action["after"]["kind"] and actual.get("target") == action["after"].get("target")
             original = actual == action["before"]
+            result = supervised and supervised.get("result") or {}
+            # Visibility is not evidence that the parent directory was synced.
+            # A returned _perform receipt follows fsync and binds the exact link.
+            synced = bool(target and result.get("status") == "returned"
+                          and isinstance(result.get("value"), dict) and result["value"].get("link") == actual)
             return {"outcome": "target" if target else "original" if original else "conflict", "closed": True,
-                    "postcondition": target, "observation": actual, "supervision": supervised,
+                    "postcondition": target and synced, "synced": synced, "observation": actual, "supervision": supervised,
                     "proof": "satisfied_observed" if target else None,
                     "dispatched": bool(supervised and (supervised.get("result") or {}).get("status") == "returned")}
         with self.bus_factory() as bus:
@@ -396,6 +421,13 @@ class SystemdAdapter:
         observed = self.observe_action(action, previous, lock_fd=lock_fd)
         if observed["postcondition"] or not observed["closed"]:
             return observed
+        if action["kind"] == "service_policy_link" and observed["outcome"] == "target":
+            # The coordinator saves SYNC_INTENT before this no-attempt call.
+            # No supervisor attempt or link mutation is replayed for durability.
+            if attempt_id is None:
+                _sync_link_directory(action["path"], observed["observation"])
+                return {**observed, "synced": True, "postcondition": True}
+            return observed
         if observed["outcome"] == "conflict":
             raise AdapterError("SERVICE_OBSERVATION_CONFLICT")
         # Never reuse an attempt identifier to dispatch. A new retry is explicitly
@@ -427,12 +459,7 @@ class SystemdAdapter:
                 if action["before"]["kind"] != "absent":
                     raise AdapterError("ENABLE_LINK_REPLACEMENT_REQUIRES_SEPARATE_REMOVE")
                 os.symlink(action["after"]["target"], path)
-            fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-            try:
-                os.fsync(fd)
-            finally:
-                os.close(fd)
-            return {"link": _link_state(path)}
+            return {"link": _sync_link_directory(path, _link_state(path))}
         with self.bus_factory() as bus:
             if kind == "service_daemon_reload":
                 self.check_reload_scope(action["after"])

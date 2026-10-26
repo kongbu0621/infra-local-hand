@@ -7,6 +7,7 @@ prune or orphan cleanup. This is the finite --no-deps equivalent adapter.
 """
 from __future__ import annotations
 
+import hashlib
 import http.client
 from decimal import Decimal, InvalidOperation
 import json
@@ -19,6 +20,14 @@ import urllib.parse
 
 from .services import validate_guard
 from .supervision import AdapterError, boot_id, digest, verify_lock
+
+
+class DockerHTTPError(AdapterError):
+    """A complete bounded HTTP error reply, not a transport completion guess."""
+    def __init__(self, method, path, status, body):
+        super().__init__(f"DOCKER_HTTP_{status}")
+        self.response = {"method": method, "path": path, "status": status,
+                         "bytes": len(body), "sha256": hashlib.sha256(body).hexdigest()}
 
 
 class _UnixHTTP(http.client.HTTPConnection):
@@ -52,10 +61,14 @@ class DockerEngine:
             data = response.read(self.maximum + 1)
             if len(data) > self.maximum:
                 raise AdapterError("DOCKER_REPLY_BOUND")
+            # HTTPResponse.read(amt) can return a short body without raising
+            # IncompleteRead. A truncated error is not a completed API reply.
+            if response.length not in (None, 0) or (response.chunked and not response.isclosed()):
+                raise AdapterError("DOCKER_REPLY_INCOMPLETE")
             if response.status == 404 and missing:
                 return None
             if not 200 <= response.status < 300:
-                raise AdapterError(f"DOCKER_HTTP_{response.status}")
+                raise DockerHTTPError(method, path, response.status, data)
             return None if not data else json.loads(data)
         finally:
             connection.close()
@@ -398,6 +411,52 @@ class GatewayAdapter:
         if "compose" in action:
             self._validate_compose(action["compose"])
 
+    def _response_closed(self, action, events):
+        """Match a saved response to this fixed mutation's preceding dispatch.
+
+        A completed failed request may have partial effects. Their identity and
+        readiness are still decided by inspect, never by this transport receipt.
+        Old successful engine_returned events remain valid completion evidence.
+        """
+        dispatched = [(index, event) for index, event in enumerate(events) if event.get("kind") == "engine_dispatch"]
+        if len(dispatched) != 1:
+            return False
+        index, dispatch = dispatched[0]
+        kind = action["kind"]
+        if dispatch.get("action") != kind:
+            return False
+        if kind == "gateway_create":
+            identity = {"name": self.name}
+            method, path = "POST", "/containers/create?name=" + _quote(self.name)
+        else:
+            container = dispatch.get("container_id")
+            if not isinstance(container, str) or not container:
+                return False
+            if kind in {"gateway_stop", "gateway_remove"} and container != action["before"]["id"]:
+                return False
+            identity = {"container_id": container}
+            method = "DELETE" if kind == "gateway_remove" else "POST"
+            suffix = {"gateway_remove": "?force=false&v=false", "gateway_stop": "/stop?t=10", "gateway_start": "/start"}[kind]
+            path = "/containers/" + _quote(container) + suffix
+        if any(dispatch.get(key) != value for key, value in identity.items()):
+            return False
+        for event in events[index + 1:]:
+            if event.get("action") != kind:
+                continue
+            if event.get("kind") == "engine_returned":
+                returned = event.get("container_id")
+                if isinstance(returned, str) and returned and (kind == "gateway_create" or returned == identity["container_id"]):
+                    return True
+            if event.get("kind") != "engine_response" or any(event.get(key) != value for key, value in identity.items()):
+                continue
+            reply = event.get("response", {})
+            if (isinstance(reply, dict) and reply.get("method") == method and reply.get("path") == path
+                    and type(reply.get("status")) is int and 300 <= reply["status"] <= 599
+                    and type(reply.get("bytes")) is int and 0 <= reply["bytes"] <= getattr(self.engine, "maximum", 1048576)
+                    and isinstance(reply.get("sha256"), str) and re.fullmatch(r"[0-9a-f]{64}", reply["sha256"])):
+                return True
+        return False
+
     def observe_action(self, action, previous=None, *, lock_fd=None):
         self._validate_action(action)
         adapter = self._using(action.get("compose", self.profile["compose"]))
@@ -410,8 +469,10 @@ class GatewayAdapter:
         kind = action["kind"]
         value = self._retain_original_binding(self.observe(require_route=kind not in {"gateway_stop", "gateway_remove"}), action["before"])
         result = supervised and supervised.get("result") or {}
-        dispatch_recorded = supervised and any(event.get("kind") == "engine_dispatch" for event in supervised["events"])
-        completed = previous is None or result.get("status") == "returned" or not dispatch_recorded
+        events = supervised["events"] if supervised else []
+        dispatch_recorded = supervised and any(event.get("kind") == "engine_dispatch" for event in events)
+        completed = (previous is None or result.get("status") == "returned" or not dispatch_recorded
+                     or self._response_closed(action, events))
         # Engine stop/start/create may outlive a broken HTTP request. Exact
         # matching container/attempt effects are adoptable; original values alone
         # are never a retry proof following an unknown response.
@@ -520,9 +581,8 @@ class GatewayAdapter:
         if kind == "gateway_create":
             if value["kind"] != "absent":
                 raise AdapterError("GATEWAY_CREATE_TARGET_OCCUPIED")
-            emit({"kind": "engine_dispatch", "action": kind, "name": self.name})
-            created = self.engine.request("POST", "/containers/create?name=" + _quote(self.name),
-                                          self._create_body(action["after"], action["attempt_id"]))
+            created = self._mutate(kind, {"name": self.name}, "POST", "/containers/create?name=" + _quote(self.name), emit,
+                                   self._create_body(action["after"], action["attempt_id"]))
             emit({"kind": "engine_returned", "action": kind, "container_id": created["Id"]})
             return {"container_id": created["Id"]}
         if value["kind"] != "container":
@@ -531,13 +591,26 @@ class GatewayAdapter:
             raise AdapterError("GATEWAY_CONTAINER_ID_CHANGED")
         if kind == "gateway_remove" and value["status"] != "stopped":
             raise AdapterError("GATEWAY_REMOVE_REQUIRES_STOPPED")
-        emit({"kind": "engine_dispatch", "action": kind, "container_id": value["id"]})
         path = "/containers/" + _quote(value["id"])
         if kind == "gateway_remove":
-            self.engine.request("DELETE", path + "?force=false&v=false")
+            self._mutate(kind, {"container_id": value["id"]}, "DELETE", path + "?force=false&v=false", emit)
         elif kind == "gateway_stop":
-            self.engine.request("POST", path + "/stop?t=10")
+            self._mutate(kind, {"container_id": value["id"]}, "POST", path + "/stop?t=10", emit)
         else:
-            self.engine.request("POST", path + "/start")
+            self._mutate(kind, {"container_id": value["id"]}, "POST", path + "/start", emit)
         emit({"kind": "engine_returned", "action": kind, "container_id": value["id"]})
         return {"container_id": value["id"]}
+
+    def _mutate(self, kind, identity, method, path, emit, body=None):
+        emit({"kind": "engine_dispatch", "action": kind, **identity})
+        try:
+            return self.engine.request(method, path, body)
+        except DockerHTTPError as error:
+            # Only a full response from this mutation supplies a completion
+            # receipt. Connection loss, timeout, truncation and oversized replies
+            # do not enter this branch. Preserve failures as failures.
+            try:
+                emit({"kind": "engine_response", "action": kind, **identity, "response": error.response})
+            except Exception as recording_error:
+                raise AdapterError(f"{error}; RESPONSE_RECORD_FAILED:{type(recording_error).__name__}") from error
+            raise

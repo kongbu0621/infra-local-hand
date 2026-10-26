@@ -95,14 +95,65 @@ class ResidentService:
         ACCEPTED proves the gate's durable dispatch barrier was never crossed;
         DISPATCHING requires original exit/unit proof and is never guessed away.
         """
-        if self.maintenance_gate is None:return
-        for duty in self.maintenance_gate.active():
-            if (duty['kind']=='prepare' and duty['state']=='ACCEPTED'
-                    and duty['binding'].get('private_root')==str(self.root)):
-                self.maintenance_gate.finish(duty,dict(never_dispatched=True))
-                record=self.records.get(duty['operation_id'])
-                if record is not None and record['attempt']==duty['attempt_id'] and record['state']=='PREPARING':
-                    self._save(dict(record,state='FAILED'))
+        self._reconcile_preparations()
+
+    def _preparation_duties(self, operation=None):
+        if self.maintenance_gate is None:return []
+        return [duty for duty in self.maintenance_gate.active()
+                if duty['kind']=='prepare' and duty['binding'].get('private_root')==str(self.root)
+                and (operation is None or duty['operation_id']==operation)]
+
+    def _reconcile_preparations(self, operation=None):
+        """Recover original duties, including attempts no longer in current.json.
+
+        The service fence/exclusive service lock excludes another dispatcher.
+        Gate bindings retain the original attempt; only its protected delivery
+        and exit records plus its exact inactive/job-free unit can close it.
+        Missing or inconsistent proof stays unresolved and is retryable later.
+        """
+        if self.worker is not None and self.worker.is_alive():return
+        for duty in self._preparation_duties(operation):
+            try:
+                binding=duty['binding'];arguments=binding.get('arguments')
+                q.require(set(binding)=={'arguments','principal_id','private_root'}
+                          and type(arguments) is dict and type(binding['principal_id']) is str
+                          and 0<len(binding['principal_id'])<=256,'RESIDENT_PREPARATION_BINDING')
+                validate_tool_args('lh_job_prepare',arguments)
+                operation_id=duty['operation_id']
+                q.require(arguments['operation_id']==operation_id
+                          and duty['loaded']['component']==self.loaded_deployment['component'],
+                          'RESIDENT_PREPARATION_BINDING')
+                record=self.records.get(operation_id)
+                if record is not None:
+                    q.require(record['principal_id']==binding['principal_id'],'RESIDENT_PREPARATION_OWNER')
+                attempt=Path(duty['attempt_id'])
+                q.match(attempt.name,r'attempt-[1-9][0-9]{0,19}')
+                q.require(str(attempt)==duty['attempt_id'] and attempt.parent==self.root/operation_id,
+                          'RESIDENT_PREPARATION_PATH')
+                if duty['state']=='ACCEPTED':
+                    # No caller crossed the durable dispatch barrier. Identity
+                    # still belongs to this service and original task; only the
+                    # delivery/exit evidence can be omitted for an unstarted duty.
+                    self.maintenance_gate.finish(duty,dict(never_dispatched=True))
+                    if record is not None and record['attempt']==duty['attempt_id'] and record['state']=='PREPARING':
+                        self._save(dict(record,state='FAILED'))
+                    continue
+                serial=attempt.name.removeprefix('attempt-')
+                unit='lhprepare'+uuid.UUID(operation_id).hex+'a'+serial+'.service'
+                delivery=load(attempt/'preparation-delivery.json')
+                q.require(type(delivery) is dict,'RESIDENT_PREPARATION_DELIVERY')
+                command=delivery.get('command')
+                q.require(type(command) is list and all(type(arg) is str for arg in command)
+                          and [arg for arg in command if arg.startswith('--unit=')]==['--unit='+unit]
+                          and command[-2:]==[str(attempt/'input.json'),str(attempt/'result.json')],
+                          'RESIDENT_PREPARATION_DELIVERY')
+                proof=load(attempt/'preparation-exit.json')
+                q.require(type(proof) is dict and type(proof.get('returncode')) is int,
+                          'RESIDENT_PREPARATION_EXIT')
+                if unit_closed(self.config['installation']['installed']['programs']['systemctl']['path'],unit):
+                    self.maintenance_gate.finish(duty,dict(process_exited=True,writers_stopped=True))
+            except (JobError,OSError,ValueError,KeyError,TypeError,subprocess.SubprocessError):
+                pass # Retain the original duty; never substitute another attempt's proof.
 
     def _catalog(self, record):
         public={k:record[k] for k in ('operation_id','principal_id','state')}
@@ -281,6 +332,9 @@ class ResidentService:
             if not allow_new:
                 raise JobError('UNSUPPORTED','This job is not available for new preparation')
             if self._busy():raise JobError('RESOURCE_BUSY','Another task is preparing or running')
+            self._reconcile_preparations(operation)
+            if self._preparation_duties(operation):
+                raise JobError('IO_UNCERTAIN','Original preparation responsibility needs closure before retry')
             if record is None and len(self.records)>=self.config['max_tasks']:
                 raise JobError('LIMIT_EXCEEDED','Retained task capacity is full')
             operation_root=self.root/operation
@@ -408,21 +462,12 @@ class ResidentService:
         """Explicit drain observation may close only positively proved duties."""
         if self.maintenance_gate is None:
             return dict(maintenance_supported=False)
-        # A crashed collector is not silently forgotten. Reuse retained exit
-        # proof and positively observe the original unit before closing duty.
+        # A current pointer may have advanced after an old closure write failed.
+        # Reconcile those original attempts before inspecting current launches.
+        self._reconcile_preparations()
         for record in self.records.values():
-            receipt=record.get('maintenance_admission')
-            if receipt is not None:
+            if record.get('maintenance_admission') is not None:
                 try:
-                    attempt=Path(record['attempt'])
-                    active={item['id']:item for item in self.maintenance_gate.active()}
-                    duty=active.get(receipt['id'])
-                    if duty is not None and not (self.worker is not None and self.worker.is_alive()):
-                        if duty['state']=='ACCEPTED' and not (attempt/'preparation-delivery.json').exists():
-                            self.maintenance_gate.finish(receipt,dict(never_dispatched=True))
-                        elif (attempt/'preparation-exit.json').exists() and unit_closed(
-                                self.config['installation']['installed']['programs']['systemctl']['path'],record['prepare_unit']):
-                            self.maintenance_gate.finish(receipt,dict(process_exited=True,writers_stopped=True))
                     if record['state']=='READY':
                         self._launcher(record).state()
                 except (JobError,OSError,ValueError,subprocess.SubprocessError):
