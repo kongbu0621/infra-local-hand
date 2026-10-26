@@ -327,7 +327,7 @@ class Coordinator:
                 and step["action"].get("kind") == "service_policy_link")
 
     def _retain_effect_identity(self, step, record, *, restore=False):
-        if step['kind'] != 'gateway' or step['action'].get('kind') != 'gateway_create':
+        if step['kind'] != 'gateway':
             return False
         attempts = record['restore_attempts' if restore else 'attempts']
         if not attempts or not attempts[-1].get('binding'):
@@ -336,6 +336,16 @@ class Coordinator:
         before = digest(attempt)
         observed = record.get('restore_observation' if restore else 'observation') or {}
         prepared = record['restore' if restore else 'prepared']
+        if step['action'].get('kind') in {'gateway_start', 'gateway_stop'}:
+            identity = (self.environment.completion_identity(step, prepared, attempt, observed)
+                        if hasattr(self.environment, 'completion_identity') else observed.get('completion_identity'))
+            if identity is not None:
+                if attempt.get('completion_identity', identity) != identity:
+                    raise DeployError('COMPLETION_IDENTITY_CONFLICT', 'Original completion cannot be rebound')
+                attempt['completion_identity'] = identity
+            return digest(attempt) != before
+        if step['action'].get('kind') != 'gateway_create':
+            return False
         identity = (self.environment.effect_identity(step, prepared, attempt, observed)
                     if hasattr(self.environment, 'effect_identity') else observed.get('effect_identity'))
         if identity is not None:

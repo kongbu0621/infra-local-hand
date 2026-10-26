@@ -396,12 +396,20 @@ class ResidentService:
 
     def _observe_unit_active(self, unit):
         result=subprocess.run([self.config['installation']['installed']['programs']['systemctl']['path'],
-            'show',unit,'-p','ActiveState','--value'],capture_output=True,text=True,timeout=3)
-        state=result.stdout.strip()
+            'show',unit,'-p','ActiveState','-p','Job'],capture_output=True,text=True,timeout=3)
+        values={}
+        for line in result.stdout.splitlines():
+            key,separator,value=line.partition('=')
+            if not separator or key in values:
+                raise JobError('IO_UNCERTAIN','Cannot observe the original system unit')
+            values[key]=value
         active={'active','activating','deactivating','reloading'}
-        if result.returncode!=0 or state not in active|{'inactive','failed'}:
+        if (result.returncode!=0 or set(values)!={'ActiveState','Job'}
+                or values['ActiveState'] not in active|{'inactive','failed'}):
             raise JobError('IO_UNCERTAIN','Cannot observe the original system unit')
-        return state in active
+        # A stopped unit with a queued start still owns its original work.
+        # Observe both properties in one reply before allowing replacement.
+        return values['ActiveState'] in active or values['Job'] not in {'','0','0 /'}
 
     def _launcher(self, record):
         key=record['attempt']
@@ -473,7 +481,8 @@ class ResidentService:
         if not finished.exists():return False
         proof=load(finished)
         return (type(proof.get('returncode')) is int and proof.get('streams_eof') is True
-                and not self._unit_active(record) and not self._has_committed_task(record))
+                and (record['boot_id']!=self.boot or not self._unit_active(record))
+                and not self._has_committed_task(record))
 
     def _retire_unstarted_execution(self, record):
         if self.maintenance_gate is None:return

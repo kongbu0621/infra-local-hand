@@ -114,6 +114,13 @@ class FixedLauncher:
         self.output = Path(output)
         self.directory = q2_config.pinned_directory(dict(path=str(self.output),
             device=self.output.stat().st_dev, inode=self.output.stat().st_ino))
+        directory=self.directory
+        try:self._initialize_state(maintenance_gate,loaded,prepared)
+        except BaseException:
+            os.close(directory)
+            raise
+
+    def _initialize_state(self,maintenance_gate,loaded,prepared):
         info = os.fstat(self.directory)
         q.require(info.st_uid == 0 and stat.S_IMODE(info.st_mode) == 0o700, 'PREPARED_OUTPUT_PROTECTION')
         self.process = None
@@ -133,6 +140,7 @@ class FixedLauncher:
         self.admission_attempt=None
         self.unstarted_admission=None
         self.popen_unresolved=False
+        self.maintenance_recovery_pending=maintenance_gate is not None
         self.started = (self.output/'started.json').exists() or (self.output/'launch-intent.json').exists()
         self.finished = (self.output/'finished.json').exists()
         if self.finished:
@@ -142,18 +150,28 @@ class FixedLauncher:
             self.result=value
         if maintenance_gate is not None:
             try:duties=maintenance_gate.active()
-            except JobError:duties=[] # A corrupt gate must not disable old reads.
-            for duty in duties:
-                if (duty['kind']=='execute' and duty['operation_id']==launch['request']['operation_id']
-                        and duty['binding'].get('prepared')==prepared):
-                    if self.maintenance_admission is not None:
-                        raise JobError('IO_UNCERTAIN','Several execution admissions need original-state inspection')
-                    self.maintenance_admission=duty
-                    if duty['state']=='ACCEPTED' and not self.started:
-                        # The enclosing service lock excludes the old caller.
-                        # DISPATCHING is never inferred closed from file absence.
-                        maintenance_gate.finish(duty,dict(never_dispatched=True))
-                        self.maintenance_admission=None
+            except JobError:pass # Preserve old reads, but absence was not proved.
+            else:self._restore_maintenance_admission(duties)
+
+    def _restore_maintenance_admission(self, duties):
+        matches=[duty for duty in duties if duty['kind']=='execute'
+                 and duty['operation_id']==self.launch['request']['operation_id']
+                 and duty['binding'].get('prepared')==self.maintenance_prepared]
+        if len(matches)>1:
+            raise JobError('IO_UNCERTAIN','Several execution admissions need original-state inspection')
+        self.maintenance_admission=matches[0] if matches else None
+        self.maintenance_recovery_pending=False
+        if matches and matches[0]['state']=='ACCEPTED' and not self.started:
+            # The enclosing service lock excludes the old caller. Retain the
+            # original receipt if confirming this closure loses its reply.
+            self.unstarted_admission=matches[0]
+            self._finish_unstarted_admission()
+
+    def _retry_maintenance_recovery(self):
+        if not getattr(self,'maintenance_recovery_pending',False):return
+        try:self._restore_maintenance_admission(self.maintenance_gate.active())
+        except (JobError,OSError,ValueError) as error:
+            raise JobError('IO_UNCERTAIN','Original execution admissions need state inspection') from error
 
     def _maintenance_finish(self):
         gate=getattr(self,'maintenance_gate',None)
@@ -177,6 +195,8 @@ class FixedLauncher:
         if self.failure is not None:
             raise JobError('IO_UNCERTAIN', 'Prepared controller capture needs inspection')
         if self.finished:
+            try:self._retry_maintenance_recovery()
+            except JobError:pass # The retained exit remains readable during a gate outage.
             self._maintenance_finish()
             return 'EXITED'
         if self.process is not None:
@@ -194,6 +214,7 @@ class FixedLauncher:
             return 'RUNNING'
         if self.started:
             raise JobError('IO_UNCERTAIN', 'A prior launch is unresolved; inspect the original task')
+        self._retry_maintenance_recovery()
         receipt=getattr(self,'maintenance_admission',None)
         if receipt is not None and receipt['state']=='DISPATCHING':
             raise JobError('IO_UNCERTAIN','Original execution admission has no local no-child proof')
@@ -208,6 +229,7 @@ class FixedLauncher:
         self._finish_local_failure()
         if getattr(self,'popen_unresolved',False):
             raise JobError('IO_UNCERTAIN','Original controller process creation is unresolved')
+        self._retry_maintenance_recovery()
         self._finish_unstarted_admission()
         attempt=getattr(self,'admission_attempt',None)
         if getattr(self,'maintenance_admission',None) is not None:
@@ -225,21 +247,26 @@ class FixedLauncher:
                 or matches[0]['state'] not in {'ACCEPTED','CLOSED'}
                 or matches[0]['state']=='CLOSED' and matches[0]['proof']!={'never_dispatched':True}):
             raise JobError('IO_UNCERTAIN','Original acceptance binding or no-child state differs')
-        try:self.maintenance_gate.finish(matches[0],dict(never_dispatched=True))
-        except (JobError,OSError,ValueError) as error:
-            raise JobError('IO_UNCERTAIN','Original acceptance still needs closure') from error
-        self.admission_attempt=None
+        # Retiring is now an explicit decision. Keep its exact receipt in the
+        # existing no-child recovery slot before finish can lose its reply;
+        # normal state/start must complete it rather than reopen a CLOSED UUID.
+        self.maintenance_admission=matches[0]
+        self.unstarted_admission=matches[0]
+        self._finish_unstarted_admission()
 
     def _finish_unstarted_admission(self):
         receipt=getattr(self,'unstarted_admission',None)
         if receipt is None:return
-        if self.maintenance_admission!=receipt or self.process is not None or self.started:
+        attempt=getattr(self,'admission_attempt',None)
+        if (self.maintenance_admission!=receipt or self.process is not None or self.started
+                or attempt is not None and attempt!=receipt['attempt_id']):
             raise JobError('IO_UNCERTAIN','Original no-child admission identity changed')
         try:self.maintenance_gate.finish(receipt,dict(never_dispatched=True))
         except (JobError,OSError,ValueError) as error:
             raise JobError('IO_UNCERTAIN','Original no-child admission still needs closure') from error
         self.maintenance_admission=None
         self.unstarted_admission=None
+        if attempt is not None:self.admission_attempt=None
 
     def _retain_unstarted_intent(self, prefix):
         # Only paths reached before successful Popen may release this intent.

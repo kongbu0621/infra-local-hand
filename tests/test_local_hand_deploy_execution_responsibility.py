@@ -4,16 +4,20 @@ All effects are confined to temporary files and harmless local child processes.
 The maintenance Gate and resident current-pointer publications remain real.
 """
 import os
+import json
 from pathlib import Path
+import sqlite3
 import sys
+import time
 import unittest
 import uuid
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 if not sys.platform.startswith('linux'):
     raise unittest.SkipTest('Linux administrator execution responsibilities')
 
 from admin.local_hand_system_manager import prepared_service as prepared
+from admin.local_hand_system_manager import resident_service as resident
 from local_hand_jobs import maintenance
 from local_hand_jobs.contract import JobError
 import test_local_hand_maintenance_gate as fixtures
@@ -122,6 +126,109 @@ class ExecutionResponsibilityTests(unittest.TestCase):
         self.assertNotEqual(record['attempt'],service.records[record['operation_id']]['attempt'])
         self.assertEqual(original,case.gate.snapshot()['responsibilities'][old['id']])
         self.assertFalse((item.output/'finished.json').exists())
+
+    def fresh_request(self,service,item,record):
+        record['request']['expires_at']=time.time()+600
+        item.maintenance_prepared=maintenance.prepared_binding(item.loaded_deployment,
+            operation_id=record['operation_id'],attempt_id=record['attempt'],
+            request_digest=record['request']['request_digest'],launch=item.launch)
+        record['maintenance_prepared']=item.maintenance_prepared;service._save(record)
+
+    def test_constructor_gate_read_failure_never_hides_original_dispatch_on_start(self):
+        case,service,item,record,_=self.maintained();self.fresh_request(service,item,record)
+        old=self.fail_without_child(case,item)
+        with patch.object(case.gate,'active',side_effect=JobError('MAINTENANCE_UNKNOWN','temporary read failure')):
+            reopened=self.reopen(case,service,item,record)
+        original=case.gate.snapshot()['responsibilities'][old['id']]
+        with case.execution_patches(reopened,[sys.executable,'-c','pass']), \
+                patch.object(service,'_unit_active',return_value=False), \
+                patch.object(case.gate,'accept',wraps=case.gate.accept) as accept, \
+                patch.object(prepared.subprocess,'Popen',side_effect=AssertionError('must not replay')) as popen:
+            result=service.call(dict(action='start',operation_id=record['operation_id'],
+                principal_id='owner',request_digest=record['request']['request_digest']))
+            self.assertEqual({'state':'UNRESOLVED'},result)
+            accept.assert_not_called();popen.assert_not_called()
+        self.assertEqual({old['id']:original},case.gate.snapshot()['responsibilities'])
+        self.assertFalse((item.output/'finished.json').exists())
+
+    def test_constructor_gate_read_failure_can_recover_accepted_before_normal_start(self):
+        case,service,item,record,_=self.maintained();self.fresh_request(service,item,record)
+        old=case.gate.accept('execute',record['operation_id'],'original-accepted',
+            dict(prepared=item.maintenance_prepared),item.loaded_deployment,prepared=item.maintenance_prepared)
+        with patch.object(case.gate,'active',side_effect=JobError('MAINTENANCE_UNKNOWN','temporary read failure')):
+            reopened=self.reopen(case,service,item,record)
+        self.assertEqual('IDLE',reopened.state())
+        closed=case.gate.snapshot()['responsibilities'][old['id']]
+        self.assertEqual('CLOSED',closed['state']);self.assertEqual({'never_dispatched':True},closed['proof'])
+        with case.execution_patches(reopened,[sys.executable,'-c','pass']):
+            reopened.start();self.assertTrue(reopened.complete.wait(3));self.assertEqual('EXITED',reopened.state())
+        self.assertEqual([],case.gate.active())
+        self.assertEqual(closed,case.gate.snapshot()['responsibilities'][old['id']])
+        self.assertEqual(2,len(case.gate.snapshot()['responsibilities']))
+
+    def test_failed_waiter_queued_original_job_blocks_retry_until_job_is_gone(self):
+        case,service,item,record,args=self.maintained()
+        item.installation['installed']['programs']['systemctl']={'path':'/synthetic/systemctl'}
+        service.config['installation']['installed']['programs']={'systemctl':{'path':'/synthetic/systemctl'}}
+        record['controller_unit']=item.launch['controller_envelope']['controller']['unit']
+        launch_path=Path(record['attempt'])/'launch-static.json'
+        launch_path.write_text(json.dumps(item.launch));launch_path.chmod(0o600)
+        record['launch_path']=str(launch_path);service._save(record)
+        with sqlite3.connect(str(Path(item.launch['policy']['broker_root'])/'jobs.sqlite')) as db:
+            db.execute('create table operations(namespace text,id text)')
+        queued=True
+        def systemctl(argv,**kwargs):
+            self.assertEqual(record['controller_unit'],argv[2])
+            job='23 /org/freedesktop/systemd1/job/23' if queued else '0'
+            return Mock(returncode=0,stdout='inactive\n' if '--value' in argv else
+                        'ActiveState=inactive\nJob='+job+'\n')
+        with case.execution_patches(item,[sys.executable,'-c','raise SystemExit(1)']), \
+                patch.object(prepared.subprocess,'run',side_effect=systemctl), \
+                patch.object(resident,'load',side_effect=lambda path:json.loads(Path(path).read_text())):
+            item.start();self.assertTrue(item.complete.wait(3));item.state()
+            old=case.gate.active()[0]
+            current=Path(record['attempt']).parent/'current.json';original=current.read_bytes()
+            finished=(item.output/'finished.json').read_bytes()
+            self.assertEqual('RUNNING',service.execution_state(record))
+            with patch.object(service,'_prepare_worker') as worker:
+                self.assertEqual('READY',service.call(args)['state']);worker.assert_not_called()
+                self.assertEqual(original,current.read_bytes())
+                self.assertEqual('DISPATCHING',case.gate.snapshot()['responsibilities'][old['id']]['state'])
+                queued=False
+                self.assertEqual('EXITED',service.execution_state(record))
+                self.assertEqual('CLOSED',case.gate.snapshot()['responsibilities'][old['id']]['state'])
+                self.assertEqual('PREPARING',service.call(args)['state']);service.worker.join(3)
+                worker.assert_called_once();self.assertFalse(service.worker.is_alive())
+            self.assertEqual(finished,(item.output/'finished.json').read_bytes())
+            self.assertNotEqual(record['attempt'],service.records[record['operation_id']]['attempt'])
+
+    def test_cross_boot_failed_waiter_retry_checks_original_database_without_current_unit(self):
+        for committed in (False,True):
+            with self.subTest(committed=committed):
+                case,service,item,record,args=self.maintained()
+                launch_path=Path(record['attempt'])/'launch-static.json'
+                launch_path.write_text(json.dumps(item.launch));launch_path.chmod(0o600)
+                record['launch_path']=str(launch_path);service._save(record)
+                with sqlite3.connect(str(Path(item.launch['policy']['broker_root'])/'jobs.sqlite')) as db:
+                    db.execute('create table operations(namespace text,id text)')
+                    if committed:db.execute('insert into operations values (?,?)',('job',record['operation_id']))
+                with case.execution_patches(item,[sys.executable,'-c','raise SystemExit(1)']):
+                    item.start();self.assertTrue(item.complete.wait(3));item.state()
+                original=(item.output/'finished.json').read_bytes()
+                service.boot='next-boot'
+                service.loaded_deployment=maintenance.loaded_configuration(service.config,boot_id=service.boot)
+                with patch.object(resident,'load',side_effect=lambda path:json.loads(Path(path).read_text())), \
+                        patch.object(service,'_unit_active',side_effect=AssertionError('new boot unit is not original')), \
+                        patch.object(service,'_prepare_worker') as worker:
+                    self.assertEqual('EXITED',service.execution_state(record))
+                    response=service.call(args)
+                    if committed:
+                        self.assertEqual('READY',response['state']);worker.assert_not_called()
+                        self.assertEqual(record,service.records[record['operation_id']])
+                    else:
+                        self.assertEqual('PREPARING',response['state']);service.worker.join(3)
+                        self.assertFalse(service.worker.is_alive());worker.assert_called_once()
+                self.assertEqual(original,(item.output/'finished.json').read_bytes())
 
 
 if __name__=='__main__':unittest.main()

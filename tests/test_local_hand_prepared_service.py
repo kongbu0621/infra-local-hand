@@ -199,6 +199,101 @@ class FixedLaunchMaintenanceRetryTests(unittest.TestCase):
         self.assertEqual('DISPATCHING',case.gate.active()[0]['state'])
         self.assertEqual(pending,item.admission_attempt)
 
+    def test_failed_explicit_retirement_is_resumed_before_normal_submit(self):
+        for committed in (False,True):
+            with self.subTest(closure_committed=committed):
+                case,service,item,record,_=self.resident_pending()
+                current=Path(record['attempt']).parent/'current.json';raw=current.read_bytes()
+                original=case.gate.active()[0];attempt=item.admission_attempt;finish=case.gate.finish
+                case.gate.close('fixture-maintenance')
+                def failed_finish(*args,**kwargs):
+                    if committed:finish(*args,**kwargs)
+                    raise OSError('original retirement acknowledgement unavailable')
+                with patch.object(case.gate,'finish',side_effect=failed_finish):service.deployment_status()
+                self.assertEqual(attempt,item.admission_attempt)
+                if committed:case.gate.release('fixture-maintenance','abort','a'*64)
+                request=dict(action='start',operation_id=record['operation_id'],principal_id='owner',request_digest='d'*64)
+                with case.execution_patches(item,[sys.executable,'-c','pass']), \
+                        patch.object(case.gate,'finish',side_effect=failed_finish), \
+                        patch.object(case.gate,'accept',wraps=case.gate.accept) as accept, \
+                        patch.object(prepared.subprocess,'Popen',side_effect=AssertionError('must not dispatch')) as popen:
+                    for _ in range(2):
+                        self.assertEqual({'state':'UNRESOLVED'},service.call(request))
+                        with self.assertRaises(JobError) as unknown:item.start()
+                        self.assertEqual('IO_UNCERTAIN',unknown.exception.code)
+                        self.assertEqual(attempt,item.admission_attempt)
+                    accept.assert_not_called();popen.assert_not_called()
+                if not committed:
+                    self.assertEqual('IDLE',item.state())
+                    case.gate.release('fixture-maintenance','abort','a'*64)
+                with case.execution_patches(item,[sys.executable,'-c','pass']), \
+                        patch.object(service,'_captured_execution_state',return_value='EXITED'):
+                    service.call(request);self.assertTrue(item.complete.wait(3));self.assertEqual('EXITED',item.state())
+                duties=case.gate.snapshot()['responsibilities']
+                self.assertEqual('CLOSED',duties[original['id']]['state'])
+                self.assertEqual({'never_dispatched':True},duties[original['id']]['proof'])
+                executions=[duty for duty in duties.values() if duty['kind']=='execute']
+                self.assertEqual(2,len(executions));self.assertIsNone(item.admission_attempt)
+                self.assertNotEqual(original['id'],item.maintenance_admission['id'])
+                self.assertEqual(raw,current.read_bytes())
+
+    def test_reconstructed_finished_result_remains_readable_and_recovers_gate_after_outage(self):
+        case,item=self.maintained()
+        with case.execution_patches(item,[sys.executable,'-c','pass']), \
+                patch.object(case.gate,'finish',side_effect=OSError('closure unavailable')):
+            item.start();self.assertTrue(item.complete.wait(3));self.assertEqual('EXITED',item.state())
+        original=case.gate.active()[0];raw=(item.output/'finished.json').read_bytes()
+        require=prepared.q.require
+        def fixture_protection(condition,code):
+            if code!='PREPARED_OUTPUT_PROTECTION':require(condition,code)
+        with patch.object(prepared.q,'require',side_effect=fixture_protection), \
+                patch.object(prepared.q2_config,'pinned_directory',side_effect=lambda _:os.dup(item.directory)), \
+                patch.object(prepared,'read_protected',side_effect=lambda path,_:Path(path).read_bytes()), \
+                patch.object(case.gate,'active',side_effect=JobError('MAINTENANCE_UNKNOWN','temporary read outage')):
+            reopened=prepared.FixedLauncher(item.launch,item.installation,item.static,item.output,
+                maintenance_gate=case.gate,loaded=item.loaded_deployment,prepared=item.maintenance_prepared)
+            self.addCleanup(os.close,reopened.directory)
+            for _ in range(2):self.assertEqual('EXITED',reopened.state())
+        with patch.object(case.gate,'accept',wraps=case.gate.accept) as accept, \
+                patch.object(prepared.subprocess,'Popen') as popen:
+            self.assertEqual('EXITED',reopened.state());self.assertEqual('EXITED',reopened.start())
+            accept.assert_not_called();popen.assert_not_called()
+        closed=case.gate.snapshot()['responsibilities'][original['id']]
+        self.assertEqual('CLOSED',closed['state'])
+        self.assertEqual({'process_exited':True,'writers_stopped':True},closed['proof'])
+        self.assertEqual(raw,(item.output/'finished.json').read_bytes())
+
+    def test_failed_constructor_closes_only_its_directory_and_can_retry_original_admission(self):
+        case,item=self.maintained()
+        original=case.gate.accept('execute',item.launch['request']['operation_id'],'accepted-before-restart',
+            dict(prepared=item.maintenance_prepared),item.loaded_deployment,prepared=item.maintenance_prepared)
+        require=prepared.q.require;allocated=[];leaked=[]
+        def fixture_protection(condition,code):
+            if code!='PREPARED_OUTPUT_PROTECTION':require(condition,code)
+        def pinned(_):
+            fd=os.dup(item.directory);allocated.append(fd);return fd
+        def reopen():
+            return prepared.FixedLauncher(item.launch,item.installation,item.static,item.output,
+                maintenance_gate=case.gate,loaded=item.loaded_deployment,prepared=item.maintenance_prepared)
+        with patch.object(prepared.q,'require',side_effect=fixture_protection), \
+                patch.object(prepared.q2_config,'pinned_directory',side_effect=pinned):
+            with patch.object(case.gate,'finish',side_effect=OSError('original closure unavailable')):
+                for _ in range(4):
+                    with self.assertRaises(JobError):reopen()
+                    fd=allocated.pop()
+                    try:os.fstat(fd)
+                    except OSError:leaked.append(False)
+                    else:
+                        leaked.append(True);os.close(fd) # Clean the demonstrated leak on the unfixed version.
+                    os.fstat(item.directory)
+                    self.assertEqual(original,case.gate.active()[0])
+            self.assertEqual([False]*4,leaked)
+            reopened=reopen();self.addCleanup(os.close,reopened.directory)
+        self.assertEqual('IDLE',reopened.state());os.fstat(reopened.directory);os.fstat(item.directory)
+        self.assertEqual([],case.gate.active())
+        closed=case.gate.snapshot()['responsibilities'][original['id']]
+        self.assertEqual({'never_dispatched':True},closed['proof'])
+
     def test_standalone_maintenance_status_retires_pending_accept_but_observe_does_not(self):
         from local_hand_jobs import startup
         case,_,item,_,_=self.resident_pending();pending=item.admission_attempt

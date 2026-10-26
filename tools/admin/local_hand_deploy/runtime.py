@@ -661,6 +661,12 @@ class ConcreteEnvironment(PlanningEnvironment):
                 observation=observation, lock_fd=self.store.lock_fd)
         return None
 
+    def completion_identity(self, step, prepared, attempt, observation):
+        if step['kind'] == 'gateway':
+            return self.gateway.completion_identity(prepared, self._previous(attempt),
+                observation=observation, lock_fd=self.store.lock_fd)
+        return None
+
     def _retention(self, prepared_files):
         """Declare exact inert staging objects in the shared reload tree.
 
@@ -707,7 +713,8 @@ class ConcreteEnvironment(PlanningEnvironment):
     def _previous(attempt):
         if not attempt or not attempt.get('binding'):
             return None
-        return attempt if ('effect_identity' in attempt or 'effect_identity_required' in attempt) else attempt['binding']
+        return attempt if any(key in attempt for key in (
+            'effect_identity', 'effect_identity_required', 'completion_identity')) else attempt['binding']
 
     @staticmethod
     def _observation(value, prepared, *, is_file=False):
@@ -1180,6 +1187,9 @@ class ConcreteEnvironment(PlanningEnvironment):
         origin, step, action, attempts, saved = latest
         previous = self._previous(attempts[-1]) if attempts else None
         kind = action['kind']
+        completion = self.gateway.completion_identity(action, previous, observation=saved, lock_fd=self.store.lock_fd)
+        if completion is not None:
+            previous = {'binding': attempts[-1]['binding'], 'completion_identity': completion}
         identity = None
         if kind == 'gateway_create':
             identity = self.gateway.creation_identity(action, previous, observation=saved, lock_fd=self.store.lock_fd)

@@ -590,6 +590,47 @@ class GatewayAdapter:
             return None
         return before['id']
 
+    def completion_identity(self, action, previous, *, observation=None, lock_fd=None):
+        """Keep adopted start/stop completion bound to its original dispatch.
+
+        A saved accurate target can close a lost HTTP reply. Later readiness or
+        runtime state changes do not reopen that completed call. This proof does
+        not assert that today's object still satisfies the action's target.
+        """
+        if not previous or action.get('kind') not in {'gateway_start', 'gateway_stop'}:
+            return None
+        binding = previous.get('binding', previous)
+        if binding.get('action_digest') != digest({**action, 'attempt_id': binding['attempt_id']}):
+            raise AdapterError('GATEWAY_ATTEMPT_BINDING_CONFLICT')
+        retained = previous.get('completion_identity')
+        saved = observation or {}
+        supervised = saved.get('supervision')
+        if not isinstance(supervised, dict) or supervised.get('binding') != binding:
+            supervised = self.runner.observe(binding, lock_fd=lock_fd)
+        dispatch = self._dispatch_identity(action, supervised.get('events', []))
+        expected = ({'daemon_id': self.profile['daemon_id'], 'container_id': dispatch[1]['container_id'],
+                     'attempt_id': binding['attempt_id']} if dispatch else None)
+        if retained is not None and retained != expected:
+            raise AdapterError('GATEWAY_COMPLETION_IDENTITY_CONFLICT')
+        if retained is not None:
+            return retained
+        if (not supervised.get('closed') or expected is None
+                or saved.get('state', saved.get('outcome')) != 'target' or saved.get('closed') is not True
+                or saved.get('supervision', {}).get('binding') != binding):
+            return None
+        value = saved.get('observation') or {}
+        if (value.get('kind') != 'container' or value.get('id') != expected['container_id']
+                or value.get('daemon_id') != expected['daemon_id']):
+            return None
+        if action['kind'] == 'gateway_stop':
+            return expected if value.get('status') == 'stopped' else None
+        route = value.get('route') or {}
+        return expected if (value.get('status') == 'running'
+            and route.get('container_id') == expected['container_id'] and route.get('protocol_ready') is True
+            and route.get('config_digest') == action['after']['config_digest']
+            and all(self._configuration(value).get(key) == action['after'].get(key)
+                    for key in ('config_digest', 'deployment_digest'))) else None
+
     def _creation_candidates(self, binding):
         # Engine v1.45 ContainerList supports JSON label filters, all states and
         # a finite result limit. Candidates prevent a false absence conclusion;
@@ -636,6 +677,8 @@ class GatewayAdapter:
         not_sent = self._request_not_sent(action, events)
         completed = (previous is None or result.get("status") == "returned" or not dispatch_recorded
                      or not_sent or self._response_closed(action, events))
+        completion = self.completion_identity(action, previous, lock_fd=lock_fd)
+        completed = completed or completion is not None
         # Engine stop/start/create may outlive a broken HTTP request. Exact
         # matching container/attempt effects are adoptable; original values alone
         # are never a retry proof following an unknown response.
@@ -724,6 +767,10 @@ class GatewayAdapter:
         if kind == 'gateway_create' and (fixed_identity is not None or target):
             observed['effect_identity'] = fixed_identity or self.creation_identity(
                 action, previous, observation=observed, lock_fd=lock_fd)
+        if completion is not None or target:
+            completion = completion or self.completion_identity(action, previous, observation=observed, lock_fd=lock_fd)
+            if completion is not None:
+                observed['completion_identity'] = completion
         return observed
 
     def execute(self, action, *, attempt_id, lock_fd, persist_intent, previous=None, expected_identity=None):
@@ -762,6 +809,8 @@ class GatewayAdapter:
         observed = self.observe_action(action, outcome, lock_fd=lock_fd, expected_identity=expected_identity)
         if observed.get('effect_identity'):
             outcome['effect_identity'] = observed['effect_identity']
+        if observed.get('completion_identity'):
+            outcome['completion_identity'] = observed['completion_identity']
         return {**observed, "attempt": outcome}
 
     def _create_body(self, target, attempt_id):

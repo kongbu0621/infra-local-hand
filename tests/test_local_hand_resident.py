@@ -598,13 +598,23 @@ class PreparationTests(unittest.TestCase):
         for observe in (self.service._unit_active,self.service._preparation_active):
             for state in ('','unknown','maintenance','refreshing','inactive\nactive'):
                 with self.subTest(observe=observe.__name__,state=state), \
-                     patch.object(admin.subprocess,'run',return_value=Mock(returncode=0,stdout=state)):
+                     patch.object(admin.subprocess,'run',return_value=Mock(returncode=0,stdout='ActiveState='+state+'\nJob=0\n')):
                     with self.assertRaises(JobError) as caught:observe(record)
                     self.assertEqual('IO_UNCERTAIN',caught.exception.code)
             for state in ('inactive','failed','active','activating','deactivating','reloading'):
                 with self.subTest(observe=observe.__name__,state=state), \
-                     patch.object(admin.subprocess,'run',return_value=Mock(returncode=0,stdout=state+'\n')):
+                     patch.object(admin.subprocess,'run',return_value=Mock(returncode=0,stdout='ActiveState='+state+'\nJob=0\n')):
                     self.assertEqual(state not in {'inactive','failed'},observe(record))
+            for state in ('inactive','failed'):
+                with self.subTest(observe=observe.__name__,queued=state), \
+                     patch.object(admin.subprocess,'run',return_value=Mock(returncode=0,
+                         stdout='ActiveState='+state+'\nJob=7 /org/freedesktop/systemd1/job/7\n')):
+                    self.assertTrue(observe(record))
+            for raw in ('ActiveState=inactive\n','Job=0\n','ActiveState=inactive\nJob=0\nJob=7\n'):
+                with self.subTest(observe=observe.__name__,malformed=raw), \
+                     patch.object(admin.subprocess,'run',return_value=Mock(returncode=0,stdout=raw)):
+                    with self.assertRaises(JobError) as caught:observe(record)
+                    self.assertEqual('IO_UNCERTAIN',caught.exception.code)
 
     def test_failure_is_retained_and_explicit_retry_has_same_operation(self):
         with patch.object(admin.provision_task,'task_input',side_effect=OSError('local pre-admission failure')):
@@ -679,12 +689,12 @@ class PreparationTests(unittest.TestCase):
         with patch.object(admin.subprocess,'run') as observe, \
              patch.object(self.service,'_prepare_worker') as worker:
             for code,state in ((0,''),(0,'maintenance'),(1,'inactive')):
-                observe.return_value=Mock(returncode=code,stdout=state)
+                observe.return_value=Mock(returncode=code,stdout='ActiveState='+state+'\nJob=0\n')
                 with self.assertRaises(JobError) as caught:self.service.call(self.args)
                 self.assertEqual('IO_UNCERTAIN',caught.exception.code)
                 worker.assert_not_called()
                 self.assertFalse((Path(self.config['private_root'])/self.args['operation_id']).exists())
-            observe.return_value=Mock(returncode=0,stdout='inactive\n')
+            observe.return_value=Mock(returncode=0,stdout='ActiveState=inactive\nJob=0\n')
             self.assertEqual('PREPARING',self.service.call(self.args)['state'])
             self.service.worker.join(2)
             worker.assert_called_once()
@@ -765,7 +775,7 @@ class PreparationTests(unittest.TestCase):
         candidate=self.ready_record();self.service._save(candidate)
         start=dict(action='start',operation_id=candidate['operation_id'],principal_id='owner',request_digest='a'*64)
         prepare=dict(self.args,operation_id=str(uuid.uuid4()))
-        with patch.object(admin.subprocess,'run',return_value=Mock(returncode=0,stdout='active\n')) as observe, \
+        with patch.object(admin.subprocess,'run',return_value=Mock(returncode=0,stdout='ActiveState=active\nJob=0\n')) as observe, \
              patch.object(self.service,'_launcher') as launcher, \
              patch.object(self.service,'_prepare_worker') as worker:
             launcher.return_value.state.return_value='IDLE'
@@ -774,13 +784,13 @@ class PreparationTests(unittest.TestCase):
                 with self.assertRaises(JobError) as caught:self.service.call(request)
                 self.assertEqual('RESOURCE_BUSY',caught.exception.code)
             for state in ('','maintenance','inactive\nactive'):
-                observe.return_value=Mock(returncode=0,stdout=state)
+                observe.return_value=Mock(returncode=0,stdout='ActiveState='+state+'\nJob=0\n')
                 for request in (prepare,start):
                     with self.assertRaises(JobError) as caught:self.service.call(request)
                     self.assertEqual('IO_UNCERTAIN',caught.exception.code)
             worker.assert_not_called();launcher.return_value.start.assert_not_called()
             self.assertFalse((Path(self.config['private_root'])/prepare['operation_id']).exists())
-            observe.return_value=Mock(returncode=0,stdout='inactive\n')
+            observe.return_value=Mock(returncode=0,stdout='ActiveState=inactive\nJob=0\n')
             self.assertEqual({'state':'RUNNING'},self.service.call(start))
             launcher.return_value.start.assert_called_once()
         self.assertEqual(proof,(output/'finished.json').read_text())
@@ -841,7 +851,7 @@ class PreparationTests(unittest.TestCase):
         output=Path(self.temp.name)/'execution';output.mkdir()
         (output/'launch-intent.json').write_text('{}')
         (output/'finished.json').write_text(json.dumps(dict(returncode=1,streams_eof=True)))
-        record=dict(output=str(output))
+        record=dict(output=str(output),boot_id=self.service.boot)
         with patch.object(self.service,'_unit_active',return_value=False), \
              patch.object(self.service,'_has_committed_task',return_value=False):
             self.assertTrue(self.service._replaceable(record))
