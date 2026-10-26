@@ -1,6 +1,7 @@
 """Container deletion proves original ID absence, independently of its name."""
 import copy
 from contextlib import nullcontext
+from pathlib import Path
 import unittest
 from urllib.parse import unquote
 from unittest.mock import patch
@@ -393,3 +394,53 @@ class UncertainGatewayCreationTests(_GatewayRollbackFixture):
         self.assertEqual('CLOSED', self.f.gate.snapshot()['state'])
         self.assertEqual(requests, self.http.requests.read_bytes())
         self.assertEqual('created-1', self.http.adapter.engine.request('GET', '/containers/created-1/json')['Id'])
+
+
+class DroppedCreationReplyHandler(NamedHandler):
+    def reply(self, status, value, **kwargs):
+        if status == 201:
+            return
+        super().reply(status, value, **kwargs)
+
+
+class AdoptedGatewayCreationTests(_GatewayRollbackFixture):
+    pause_before_commit = True
+    handler = DroppedCreationReplyHandler
+
+    def original_creation(self):
+        record = next(record for step, record in zip(self.applied['plan']['steps'], self.applied['steps'])
+                      if step['action'].get('kind') == 'gateway_create')
+        self.assertEqual('target', record['observation']['state'])
+        self.assertTrue(record['observation']['closed'])
+        self.assertEqual('unknown', record['observation']['supervision']['result']['status'])
+        self.assertEqual(self.identity, record['attempts'][0]['effect_identity'])
+        return record
+
+    def test_verified_creation_with_lost_reply_can_finish_normal_rollback(self):
+        record = self.original_creation()
+        receipt = Path(record['attempts'][0]['binding']['result_directory']) / 'result.json'
+        original = receipt.read_bytes()
+        final = self.coordinator.rollback(self.applied['id'])
+        self.assertEqual('ROLLED_BACK', final['decision'], final['waiting'])
+        self.assertTrue(final['released'])
+        self.assertIsNone(self.http.adapter.engine.request('GET', '/containers/' + self.identity['container_id'] + '/json', missing=True))
+        self.assertEqual(original, receipt.read_bytes())
+
+    def test_verified_creation_with_lost_reply_survives_legitimate_corrective_replacement(self):
+        self.original_creation()
+        final = PendingGatewayRollbackTests.correction(self, present=True)
+        self.assertEqual('COMMITTED', final['decision'], final['waiting'])
+        self.assertTrue(final['released'])
+        self.assertNotEqual(self.identity['container_id'], self.http.adapter.observe(require_route=False)['id'])
+        self.assertIsNone(self.http.adapter.engine.request('GET', '/containers/' + self.identity['container_id'] + '/json', missing=True))
+
+    def test_fixed_completion_does_not_authorize_renamed_creation_replay(self):
+        self.original_creation()
+        identifier = self.identity['container_id']
+        self.http.adapter.engine.request('POST', '/containers/' + identifier + '/rename?name=renamed-owned', {})
+        requests = self.http.requests.read_bytes()
+        final = self.coordinator.resume(self.applied['id'])
+        self.assertIsNone(final['decision'])
+        self.assertFalse(final['released'])
+        self.assertEqual(requests, self.http.requests.read_bytes())
+        self.assertEqual(identifier, self.http.adapter.engine.request('GET', '/containers/' + identifier + '/json')['Id'])

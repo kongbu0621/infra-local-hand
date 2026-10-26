@@ -1,14 +1,16 @@
 """Fixed launch retention and real pipe exit; no production host claim."""
 import os
 import json
+from contextlib import nullcontext
 from pathlib import Path
 import subprocess
+import struct
 import sys
 import tempfile
 import threading
 import time
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 if not sys.platform.startswith('linux'):
     raise unittest.SkipTest('Linux administrator task launcher')
@@ -105,10 +107,12 @@ class FixedLaunchMaintenanceRetryTests(unittest.TestCase):
             for _ in range(3):
                 with self.assertRaisesRegex(OSError,'reply lost'):item.start()
                 self.assertIsNone(item.maintenance_admission)
+                self.assertEqual('IDLE',item.state())
                 self.assertEqual(1,len(case.gate.snapshot()['responsibilities']))
             popen.assert_not_called()
         self.assertEqual(1,len(set(attempts)))
         original=case.gate.active()[0];self.assertEqual('ACCEPTED',original['state'])
+        case.gate.close('fixture-maintenance')
         with case.execution_patches(item,[sys.executable,'-c','pass']):
             item.start();self.assertTrue(item.complete.wait(3));self.assertEqual('EXITED',item.state())
         responsibilities=case.gate.snapshot()['responsibilities']
@@ -116,6 +120,136 @@ class FixedLaunchMaintenanceRetryTests(unittest.TestCase):
         self.assertEqual('CLOSED',responsibilities[original['id']]['state'])
         self.assertEqual({'process_exited':True,'writers_stopped':True},responsibilities[original['id']]['proof'])
         self.assertEqual(original['id'],item.maintenance_admission['id'])
+
+    def resident_pending(self):
+        from test_local_hand_deploy_execution_responsibility import ExecutionResponsibilityTests
+        fixture=ExecutionResponsibilityTests('runTest');self.addCleanup(fixture.doCleanups)
+        case,service,item,record,args=fixture.maintained();self.addCleanup(service.close)
+        record['request']['expires_at']=time.time()+600
+        item.maintenance_prepared=prepared.maintenance.prepared_binding(item.loaded_deployment,
+            operation_id=record['operation_id'],attempt_id=record['attempt'],request_digest='d'*64,launch=item.launch)
+        record['maintenance_prepared']=item.maintenance_prepared
+        arguments={key:value for key,value in args.items() if key not in {'action','principal_id'}}
+        admission=case.gate.accept('prepare',record['operation_id'],record['attempt'],
+            dict(arguments=arguments,principal_id='owner',private_root=str(service.root)),service.loaded_deployment)
+        case.gate.finish(admission,dict(never_dispatched=True));record['maintenance_admission']=admission
+        service._save(record)
+        accept=case.gate.accept
+        def lost_reply(*args,**kwargs):
+            accept(*args,**kwargs);raise OSError('original acceptance reply lost')
+        with patch.object(case.gate,'accept',side_effect=lost_reply):
+            with self.assertRaises(OSError):
+                service.call(dict(action='start',operation_id=record['operation_id'],principal_id='owner',request_digest='d'*64))
+        return case,service,item,record,args
+
+    def test_closed_maintenance_retires_lost_accept_without_new_authorization_or_admission(self):
+        case,service,item,record,_=self.resident_pending()
+        current=Path(record['attempt']).parent/'current.json';raw=current.read_bytes()
+        pending=item.admission_attempt;original=case.gate.active()[0];finish=case.gate.finish
+        expired=Principal('owner',frozenset({'lh:submit'}),expires_at=int(time.time())-1)
+        def lost_finish(*args,**kwargs):
+            finish(*args,**kwargs);raise OSError('original closure reply lost')
+        with patch.object(case.gate,'accept',wraps=case.gate.accept) as accept, \
+                patch.object(prepared.subprocess,'Popen') as popen:
+            self.assertEqual({'state':'IDLE'},service.call(dict(action='status',operation_id=record['operation_id'],principal_id='owner')))
+            service.deployment_status()
+            self.assertEqual('ACCEPTED',case.gate.active()[0]['state'])
+            self.assertEqual(pending,item.admission_attempt)
+            with self.assertRaises(JobError) as denied:item.start(authorization=expired)
+            self.assertEqual('UNAUTHORIZED',denied.exception.code)
+            case.gate.close('fixture-maintenance')
+            with patch.object(case.gate,'finish',side_effect=lost_finish):service.deployment_status()
+            self.assertEqual(pending,item.admission_attempt)
+            service.deployment_status()
+            self.assertIsNone(item.admission_attempt)
+            accept.assert_not_called();popen.assert_not_called()
+        duty=case.gate.snapshot()['responsibilities'][original['id']]
+        self.assertEqual('CLOSED',duty['state']);self.assertEqual({'never_dispatched':True},duty['proof'])
+        self.assertEqual(raw,current.read_bytes())
+        with self.assertRaises(JobError) as denied:item.start(authorization=expired)
+        self.assertEqual('UNAUTHORIZED',denied.exception.code)
+
+    def test_expired_ready_replacement_waits_for_original_acceptance_closure(self):
+        case,service,item,record,args=self.resident_pending()
+        current=Path(record['attempt']).parent/'current.json';raw=current.read_bytes()
+        pending=item.admission_attempt;original=case.gate.active()[0]
+        with patch('time.time',return_value=record['request']['expires_at']+1), \
+                patch.object(service,'_prepare_worker') as worker:
+            with patch.object(case.gate,'finish',side_effect=OSError('closure unavailable')):
+                with self.assertRaises(JobError) as unknown:service.call(args)
+                self.assertEqual('IO_UNCERTAIN',unknown.exception.code)
+                worker.assert_not_called();self.assertEqual(raw,current.read_bytes())
+                self.assertEqual(record,service.records[record['operation_id']])
+                self.assertEqual(pending,item.admission_attempt)
+            self.assertEqual('PREPARING',service.call(args)['state']);service.worker.join(3)
+            worker.assert_called_once()
+        duty=case.gate.snapshot()['responsibilities'][original['id']]
+        self.assertEqual('CLOSED',duty['state']);self.assertEqual({'never_dispatched':True},duty['proof'])
+        self.assertNotEqual(record['attempt'],service.records[record['operation_id']]['attempt'])
+        self.assertIsNone(item.admission_attempt)
+
+    def test_explicit_retirement_cannot_adopt_changed_loaded_binding_or_dispatch(self):
+        case,_,item,_,_=self.resident_pending();original=case.gate.active()[0]
+        pending=item.admission_attempt;loaded=item.loaded_deployment
+        item.loaded_deployment=dict(loaded,component='another-manager')
+        with self.assertRaises(JobError):item.retire_unstarted_admission()
+        self.assertEqual(original,case.gate.active()[0]);self.assertEqual(pending,item.admission_attempt)
+        item.loaded_deployment=loaded;case.gate.dispatch(original)
+        with self.assertRaises(JobError):item.retire_unstarted_admission()
+        self.assertEqual('DISPATCHING',case.gate.active()[0]['state'])
+        self.assertEqual(pending,item.admission_attempt)
+
+    def test_standalone_maintenance_status_retires_pending_accept_but_observe_does_not(self):
+        from local_hand_jobs import startup
+        case,_,item,_,_=self.resident_pending();pending=item.admission_attempt
+        original=case.gate.active()[0]
+        launch=json.loads(json.dumps(item.launch))
+        launch['request']['expires_at']=int(launch['request']['expires_at'])
+        launch.update(transport='broker',mcp=None,principal_id='owner',policy_path='/synthetic-policy')
+        launch['policy']['process_manager']['gid']=os.getgid()
+        raw=json.dumps(launch).encode()
+        endpoint=case.root/'prepared.sock';endpoint.touch()
+        config=dict(schema='local-hand-prepared-service/v1',launch_path=item.static,
+            launch_sha256=prepared.hashlib.sha256(raw).hexdigest(),installation=item.installation,
+            output=str(item.output),socket=str(endpoint),descriptor=str(case.root/'descriptor.json'))
+        listener=MagicMock();listener.__enter__.return_value=listener
+        connection=MagicMock();connection.__enter__.return_value=connection
+        connection.getsockopt.return_value=struct.pack('3i',os.getpid(),0,0)
+        listener.accept.side_effect=[(connection,None)]*3+[StopIteration('fixture complete')]
+        requests=iter(('deployment_status','deployment_observe','deployment_status'));responses=[]
+        def read_frame(*args,**kwargs):
+            action=next(requests)
+            if action=='deployment_observe':case.gate.close('fixture-maintenance')
+            return json.dumps({'action':action}).encode()
+        def send_frame(_,response,**kwargs):
+            self.assertIn('result',response);responses.append(response)
+            if len(responses)<3:
+                self.assertEqual('ACCEPTED',case.gate.active()[0]['state'])
+                self.assertEqual(pending,item.admission_attempt)
+            else:
+                self.assertEqual([],case.gate.active());self.assertIsNone(item.admission_attempt)
+        require=prepared.q.require
+        def fixture_protection(condition,code):
+            if code not in {'PREPARED_ADMINISTRATOR','PREPARED_SOCKET_PARENT'}:require(condition,code)
+        with patch.object(prepared.q,'require',side_effect=fixture_protection), \
+                patch.object(prepared,'read_protected',return_value=raw), \
+                patch.object(prepared.task_service,'TaskService'), \
+                patch.object(prepared,'acquire_service_lock'), \
+                patch.object(prepared,'FixedLauncher',return_value=item), \
+                patch.object(prepared.maintenance,'from_config',return_value=case.gate), \
+                patch.object(prepared.maintenance,'loaded_configuration',return_value=item.loaded_deployment), \
+                patch.object(startup,'authorize',return_value=nullcontext()), \
+                patch.object(prepared.socket,'socket',return_value=listener), \
+                patch.object(prepared.os,'chown'),patch('builtins.print'), \
+                patch.object(prepared.cli,'_read_frame',side_effect=read_frame), \
+                patch.object(prepared.cli,'_send_frame',side_effect=send_frame), \
+                patch.object(case.gate,'accept',wraps=case.gate.accept) as accept, \
+                patch.object(prepared.subprocess,'Popen') as popen:
+            with self.assertRaisesRegex(StopIteration,'fixture complete'):prepared.serve(config)
+            accept.assert_not_called();popen.assert_not_called()
+        self.assertEqual(3,len(responses))
+        duty=case.gate.snapshot()['responsibilities'][original['id']]
+        self.assertEqual('CLOSED',duty['state']);self.assertEqual({'never_dispatched':True},duty['proof'])
 
 
 class FixedLaunchTests(unittest.TestCase):

@@ -464,6 +464,8 @@ class ResidentService:
         if not (output/'launch-intent.json').exists() and not (output/'started.json').exists():
             # A retry poll after successful preparation must keep the exact
             # READY request. Unsubmitted tasks are replaced only when stale.
+            if not failed_only and not (output/'finished.json').exists():
+                self._retire_unstarted_execution(record)
             return not failed_only
         # A proved pre-admission failure may be prepared again. A committed job,
         # missing exit capture or unknown write is never replaced.
@@ -472,6 +474,19 @@ class ResidentService:
         proof=load(finished)
         return (type(proof.get('returncode')) is int and proof.get('streams_eof') is True
                 and not self._unit_active(record) and not self._has_committed_task(record))
+
+    def _retire_unstarted_execution(self, record):
+        if self.maintenance_gate is None:return
+        def original(duty):
+            return (duty['kind']=='execute' and duty['operation_id']==record['operation_id']
+                    and duty['loaded']['component']==self.loaded_deployment['component']
+                    and duty['binding'].get('prepared')==record.get('maintenance_prepared'))
+        launcher=self.launchers.get(record['attempt'])
+        if launcher is None and any(original(duty) for duty in self.maintenance_gate.active()):
+            launcher=self._launcher(record)
+        if launcher is not None:launcher.retire_unstarted_admission()
+        if any(original(duty) for duty in self.maintenance_gate.active()):
+            raise JobError('IO_UNCERTAIN','Original execution responsibility needs closure before replacement')
 
     def _busy(self, except_operation=None):
         if self.worker is not None and self.worker.is_alive():return True
@@ -738,11 +753,14 @@ class ResidentService:
         # A current pointer may have advanced after an old closure write failed.
         # Reconcile those original attempts before inspecting current launches.
         self._reconcile_preparations()
+        draining=self.maintenance_gate.snapshot()['state']=='CLOSED'
         for record in self.records.values():
             if record.get('maintenance_admission') is not None:
                 try:
                     if record['state']=='READY':
-                        self._launcher(record).state()
+                        launcher=self._launcher(record)
+                        if launcher.state()=='IDLE' and draining:
+                            launcher.retire_unstarted_admission()
                 except (JobError,OSError,ValueError,subprocess.SubprocessError):
                     pass
         return self.deployment_observe()

@@ -643,6 +643,10 @@ class GatewayAdapter:
         fixed_identity = self.creation_identity(action, previous, lock_fd=lock_fd) if kind == 'gateway_create' else None
         if fixed_identity:
             created.add(fixed_identity['container_id'])
+            # An exact creation was already proved and retained, even if its
+            # HTTP reply was lost. A later legitimate stop/remove must not erase
+            # that completion proof when the old target is no longer visible.
+            completed = True
         if kind == 'gateway_create' and self._dispatch_identity(action, events):
             created.update(event['container_id'] for event in events
                            if event.get('kind') == 'engine_returned' and event.get('action') == kind

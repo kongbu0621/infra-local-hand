@@ -194,7 +194,41 @@ class FixedLauncher:
             return 'RUNNING'
         if self.started:
             raise JobError('IO_UNCERTAIN', 'A prior launch is unresolved; inspect the original task')
+        receipt=getattr(self,'maintenance_admission',None)
+        if receipt is not None and receipt['state']=='DISPATCHING':
+            raise JobError('IO_UNCERTAIN','Original execution admission has no local no-child proof')
         return 'IDLE'
+
+    def retire_unstarted_admission(self):
+        """Explicitly relinquish a failed acceptance before replacement/drain.
+
+        Ordinary state reads retain the attempt for an authorized start retry.
+        This lookup never accepts work, and cannot adopt another caller's duty.
+        """
+        self._finish_local_failure()
+        if getattr(self,'popen_unresolved',False):
+            raise JobError('IO_UNCERTAIN','Original controller process creation is unresolved')
+        self._finish_unstarted_admission()
+        attempt=getattr(self,'admission_attempt',None)
+        if getattr(self,'maintenance_admission',None) is not None:
+            raise JobError('IO_UNCERTAIN','Original execution admission still needs reconciliation')
+        if attempt is None:return
+        if self.process is not None or self.started or self.finished:
+            raise JobError('IO_UNCERTAIN','Original acceptance has no local no-child proof')
+        matches=[duty for duty in self.maintenance_gate.snapshot()['responsibilities'].values()
+                 if duty['kind']=='execute' and duty['operation_id']==self.launch['request']['operation_id']
+                 and duty['attempt_id']==attempt]
+        if not matches:return # No admission exists; a later normal start can retry this same UUID.
+        if (len(matches)!=1 or matches[0]['binding']!={'prepared':self.maintenance_prepared}
+                or matches[0]['loaded']!=self.loaded_deployment
+                or self.maintenance_prepared['resource_digest']!=maintenance.digest(self.launch)
+                or matches[0]['state'] not in {'ACCEPTED','CLOSED'}
+                or matches[0]['state']=='CLOSED' and matches[0]['proof']!={'never_dispatched':True}):
+            raise JobError('IO_UNCERTAIN','Original acceptance binding or no-child state differs')
+        try:self.maintenance_gate.finish(matches[0],dict(never_dispatched=True))
+        except (JobError,OSError,ValueError) as error:
+            raise JobError('IO_UNCERTAIN','Original acceptance still needs closure') from error
+        self.admission_attempt=None
 
     def _finish_unstarted_admission(self):
         receipt=getattr(self,'unstarted_admission',None)
@@ -566,7 +600,9 @@ def serve(config):
                             peer_pid=peer_pid,peer_uid=peer_uid,mode=request['mode'])
                         continue
                     if peer_uid==0 and request in ({'action':'deployment_status'},{'action':'deployment_observe'}):
-                        if request['action']=='deployment_status':launcher.state()
+                        if request['action']=='deployment_status':
+                            if launcher.state()=='IDLE' and gate is not None and gate.snapshot()['state']=='CLOSED':
+                                launcher.retire_unstarted_admission()
                         response={'result':dict(maintenance_supported=gate is not None,
                             loaded=maintenance.process_proof(loaded,protocol_ready=True) if gate is not None else None)}
                         cli._send_frame(connection,response,deadline=end,limit=4096)

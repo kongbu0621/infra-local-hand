@@ -696,7 +696,8 @@ class PreparationRetentionTests(unittest.TestCase):
         service.loaded_deployment = maintenance.loaded_configuration(service.config, boot_id=service.boot)
         service.worker, service.protocol_ready = None, True
         service.records = {record['operation_id']: record}
-        service.launchers = {record['attempt']: SimpleNamespace(state=lambda: 'IDLE')}
+        service.launchers = {record['attempt']: SimpleNamespace(
+            state=lambda: 'IDLE', retire_unstarted_admission=lambda: None)}
         service.fence = threading.RLock()
         return lambda *args, **kwargs: service.deployment_status()
 
