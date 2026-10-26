@@ -24,6 +24,10 @@ import test_local_hand_jobs_integration as integration_fixtures
 def production_fixture():
     """Real production storage layout; only the task process is synthetic."""
     class Fixture(integration_fixtures.JobIntegrationTests):
+        # Production composition keeps its real filesystem admission. CI
+        # supplies a local build root even when the default /tmp is tmpfs.
+        temporary_parent = os.environ.get('LOCAL_HAND_VERIFY_ROOT') or None
+
         def open_backend(self, initialize=False):
             self.policy = Policy(copy.deepcopy(self.config))
             self.registry = integration_fixtures.Registry()
@@ -210,6 +214,21 @@ class RetainedReadbackTests(unittest.TestCase):
 
 
 class RetainedCompositionTests(unittest.TestCase):
+    def test_production_setup_failure_cleans_its_temporary_directory(self):
+        from local_hand_jobs import resources
+        f = production_fixture()
+        self.addCleanup(f.tearDown)
+        nested = type(self)('test_new_reader_composes_original_policy_ledger_and_artifacts_without_writes')
+        result = unittest.TestResult()
+        with patch(__name__ + '.production_fixture', return_value=f), \
+                patch.object(resources, 'verify_local_filesystem',
+                             side_effect=JobError('UNSUPPORTED', 'injected filesystem admission failure')):
+            nested.run(result)
+        self.assertEqual([], result.failures)
+        self.assertEqual(1, len(result.errors))
+        self.assertIn('injected filesystem admission failure', result.errors[0][1])
+        self.assertFalse(f.root.exists(), 'Failed setUp must run its registered cleanup immediately')
+
     def test_offline_reader_preserves_old_v1_owner_without_inventing_v2_policy(self):
         from admin.local_hand_deploy.retained_reader import data_identity
         from admin.local_hand_deploy.model import DeployError
@@ -249,7 +268,7 @@ class RetainedCompositionTests(unittest.TestCase):
                 self.assertEqual(["second", "second state", "second lock", "first", "first state", "first lock"], closed)
 
     def test_new_reader_composes_original_policy_ledger_and_artifacts_without_writes(self):
-        f = production_fixture(); f.setUp(); self.addCleanup(f.tearDown)
+        f = production_fixture(); self.addCleanup(f.tearDown); f.setUp()
         status = f.run_job("prior-writer", "host.inspect")
         policy = f.root / "original-policy.json"
         policy.write_text(json.dumps(f.config)); policy.chmod(0o600)

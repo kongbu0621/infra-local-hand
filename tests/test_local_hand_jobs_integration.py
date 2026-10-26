@@ -175,7 +175,7 @@ class SyntheticManager:
 
 class JobIntegrationTests(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory()
+        self.temporary = tempfile.TemporaryDirectory(dir=getattr(self, 'temporary_parent', None))
         self.root = Path(self.temporary.name)
         self.config = _config(self.root)
         self.owner = Principal("owner", frozenset(TOOL_SCOPES.values()))
