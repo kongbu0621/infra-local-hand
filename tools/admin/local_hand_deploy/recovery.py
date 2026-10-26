@@ -30,25 +30,43 @@ def origins(store, op):
     return [store.get(value) for value in op.get("inherited", [])] + [op]
 
 
-def entries(chain):
+def _records(chain):
     for op in chain:
         for step, record in zip(op["plan"]["steps"], op["steps"]):
             if record["prepared"] is not None:
-                yield step, record["prepared"], record["attempts"], record["effective"] or record["state"] == "VERIFIED"
+                yield step, record, False
         for entry in op.get("compensation", []):
-            record = entry["record"]
-            yield entry["step"], record["restore"], record["restore_attempts"], record["state"] == "RESTORED"
+            yield entry["step"], entry["record"], True
+
+
+def entries(chain):
+    for step, record, restore in _records(chain):
+        if restore:
+            yield step, record["restore"], record["restore_attempts"], record["state"] == "RESTORED"
+        else:
+            yield step, record["prepared"], record["attempts"], record["effective"] or record["state"] == "VERIFIED"
 
 
 def closed_effects(store, gate, op):
     """Observe the latest responsible caller per object without saving records."""
+    from .coordinator import Coordinator
     chain = origins(store, op)
     env = ConcreteEnvironment(op["plan"], store, gate)
+    proof_reader = Coordinator(store, gate, env)
     covered = set()
-    for step, prepared, attempts, effective in reversed(list(entries(chain))):
+    for step, record, restore in reversed(list(_records(chain))):
+        prepared = record["restore" if restore else "prepared"]
+        attempts = record["restore_attempts" if restore else "attempts"]
+        effective = record["state"] == "RESTORED" if restore else record["effective"] or record["state"] == "VERIFIED"
         key = env.effect_key(step)
         if key in covered or not (attempts or effective):
             continue
+        # Planning runs before the coordinator's refresh. Apply the same exact
+        # retained-proof validation to a private copy, so old successful target
+        # observations remain useful without migrating the read-only records.
+        retained = copy.deepcopy(record)
+        proof_reader._retain_effect_identity(step, retained, restore=restore)
+        attempts = retained["restore_attempts" if restore else "attempts"]
         value = env.observe(step, prepared, attempts[-1] if attempts else None)
         if value.get("closed") is not True or value.get("state") in {"unknown", "running"}:
             raise DeployError("CALLER_NOT_CLOSED", "The original caller or system job still needs reconciliation")

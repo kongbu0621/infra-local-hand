@@ -8,9 +8,19 @@ from admin.local_hand_deploy.model import digest, seal_plan
 import test_local_hand_deploy_gateway_start as fixtures
 
 
+class TimestampHandler(fixtures.StartHandler):
+    def do_POST(self):
+        if self.path.endswith('/start') or '/stop?' in self.path:
+            self.server.transitions = getattr(self.server, 'transitions', 0) + 1
+            field = 'StartedAt' if self.path.endswith('/start') else 'FinishedAt'
+            self.server.container['State'][field] = '2026-10-27T00:00:%02d.000000000Z' % self.server.transitions
+        super().do_POST()
+
+
 class GatewayCompletionTests(unittest.TestCase):
     def setUp(self):
-        fixtures.GatewayStartTests.setUp(self)
+        with patch.object(fixtures, 'StartHandler', TimestampHandler):
+            fixtures.GatewayStartTests.setUp(self)
         self.environment.completion_identity = self.concrete.completion_identity
 
     running_replacement_plan = fixtures.GatewayStartTests.running_replacement_plan
@@ -91,7 +101,7 @@ class GatewayCompletionTests(unittest.TestCase):
         self.assertNotIn('completion_identity', attempts[1])
         self.assertFalse(final['steps'][1]['observation']['closed'])
 
-    def test_adopted_stop_can_retry_after_same_container_is_restarted(self):
+    def test_adopted_stop_stays_closed_but_independent_restart_requires_current_plan(self):
         self.f.independent_create()
         identity = self.f.adapter.observe(require_route=False)['id']
         self.f.adapter.engine.request('POST', '/containers/' + identity + '/start')
@@ -103,8 +113,20 @@ class GatewayCompletionTests(unittest.TestCase):
         receipt = Path(first['attempt']['binding']['result_directory']) / 'result.json';raw = receipt.read_bytes()
         self.f.mode.write_text('success')
         self.f.adapter.engine.request('POST', '/containers/' + identity + '/start')
-        final = self.f.adapter.execute(action, attempt_id='stop-again', lock_fd=self.f.fd,
-            persist_intent=lambda _: None, previous=first['attempt'])
+        observed = self.f.adapter.observe_action(action, first['attempt'], lock_fd=self.f.fd)
+        self.assertTrue(observed['closed'])
+        self.assertEqual('conflict', observed['outcome'])
+        self.assertEqual(first['completion_identity'], observed['completion_identity'])
+        for field in ('started_at', 'finished_at'):
+            self.assertNotEqual(action['before'][field], observed['observation'][field])
+        requests = self.f.requests.read_bytes()
+        with self.assertRaisesRegex(Exception, 'GATEWAY_OBSERVATION_CONFLICT'):
+            self.f.adapter.execute(action, attempt_id='old-stop-again', lock_fd=self.f.fd,
+                persist_intent=lambda _: None, previous=first['attempt'])
+        self.assertEqual(requests, self.f.requests.read_bytes())
+        current = self.f.adapter.plan({'running': False, 'config_digest': 'b' * 64, 'deployment_digest': 'c' * 64})[0]
+        final = self.f.adapter.execute(current, attempt_id='stop-current-instance', lock_fd=self.f.fd,
+            persist_intent=lambda _: None)
         self.assertTrue(final['postcondition'], final)
         self.assertEqual('stopped', self.f.adapter.observe(require_route=False)['status'])
         self.assertEqual(raw, receipt.read_bytes())

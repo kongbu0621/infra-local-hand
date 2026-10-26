@@ -657,12 +657,14 @@ class ConcreteEnvironment(PlanningEnvironment):
 
     def effect_identity(self, step, prepared, attempt, observation):
         if step['kind'] == 'gateway' and prepared.get('kind') == 'gateway_create':
+            self._mutating_adapters(readonly=True)
             return self.gateway.creation_identity(prepared, self._previous(attempt),
                 observation=observation, lock_fd=self.store.lock_fd)
         return None
 
     def completion_identity(self, step, prepared, attempt, observation):
         if step['kind'] == 'gateway':
+            self._mutating_adapters(readonly=True)
             return self.gateway.completion_identity(prepared, self._previous(attempt),
                 observation=observation, lock_fd=self.store.lock_fd)
         return None
