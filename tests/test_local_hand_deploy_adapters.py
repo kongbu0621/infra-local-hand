@@ -640,11 +640,16 @@ class GatewayTests(unittest.TestCase):
             "local-hand.deploy.config": "3" * 64, "local-hand.deploy.deployment": "4" * 64})
         def unavailable(_): raise RuntimeError("status unavailable")
         adapter = GatewayAdapter(self.profile, self.runner, engine=self.engine, route_probe=unavailable)
-        restore = adapter.plan_restore(forward)
+        # This fixture models the completed create proof supplied by runtime;
+        # the Unix HTTP suite exercises its actual supervisor/effect binding.
+        creation = {'outcome': 'target', 'closed': True, 'observation': adapter.observe(require_route=False)}
+        restore = adapter.plan_restore(forward, creation_observations=[creation])
         self.assertEqual(["gateway_stop", "gateway_remove", "gateway_create", "gateway_start"], [step["kind"] for step in restore])
         self.assertEqual("original", adapter.observe_action(restore[0])["outcome"])
-        with self.assertRaisesRegex(RuntimeError, "status unavailable"):
-            adapter.observe_action(forward[-1])
+        unready = adapter.observe_action(forward[-1], expected_identity={
+            'daemon_id': 'daemon-fixture', 'container_id': 'candidate'})
+        self.assertTrue(unready['closed'])
+        self.assertFalse(unready['postcondition'])
         with self.assertRaisesRegex(RuntimeError, "status unavailable"):
             adapter.observe()
 
@@ -669,7 +674,8 @@ class GatewayTests(unittest.TestCase):
         # restoration recreates its original argv and configuration identity.
         self.engine.container = self.container(self.profile["compose"], name="candidate", labels={
             "local-hand.deploy.config": "3" * 64, "local-hand.deploy.deployment": "4" * 64})
-        restore = adapter.plan_restore(actions)
+        creation = {'outcome': 'target', 'closed': True, 'observation': adapter.observe(require_route=False)}
+        restore = adapter.plan_restore(actions, creation_observations=[creation])
         self.assertEqual(["gateway_stop", "gateway_remove", "gateway_create", "gateway_start"], [a["kind"] for a in restore])
         self.assertTrue(all(a["compose"] == original for a in restore))
         self.assertEqual(["serve", "original"], adapter._using(original)._create_body(restore[2]["after"], "restore")["Cmd"])

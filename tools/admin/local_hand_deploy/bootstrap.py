@@ -351,7 +351,7 @@ class OfflineObserver:
             if value.get("Slice") in names or value.get("Id") in names:
                 _fail("BOOTSTRAP_BUSY", "An original task stage still has a queued system job")
 
-    def duties(self, bus, entry, *, preparation_boots=None):
+    def duties(self, bus, entry, *, preparation_boots=None, preparation_unstarted=None):
         if entry["kind"] == "prepared":
             raw = startup.protected_read(entry["launch_path"], owner_uid=self.owner, maximum=2 * 1024 * 1024)
             if hashlib.sha256(raw).hexdigest() != entry["launch_digest"]:
@@ -365,7 +365,9 @@ class OfflineObserver:
         _directory(root, self.owner)
         records, attempts, fingerprints = 0, 0, []
         preparation_boots = preparation_boots or {}
+        preparation_unstarted = preparation_unstarted or {}
         observed_attempts = set()
+        observed_unstarted = set()
         for directory in _children(root, MAX_SCAN):
             mode = directory.lstat().st_mode
             if stat.S_ISLNK(mode):
@@ -397,7 +399,8 @@ class OfflineObserver:
                 delivery = attempt / "preparation-delivery.json"
                 if _exists(delivery):
                     proof_path = attempt / "preparation-exit.json"
-                    proof = _read(proof_path, self.owner) if _exists(proof_path) else None
+                    has_exit_proof = _exists(proof_path)
+                    proof = _read(proof_path, self.owner) if has_exit_proof else None
                     # A nonzero waiter can have left its unit behind. The exact
                     # unit is derived by the old fixed dispatcher from the serial.
                     data = _read(delivery, self.owner)
@@ -407,6 +410,11 @@ class OfflineObserver:
                     if unit is None or (attempt == current_attempt and unit != record["prepare_unit"]):
                         _fail("BOOTSTRAP_UNRESOLVED", "Retained preparation lacks its exact unit binding")
                     self.stopped(bus, unit)
+                    no_start = preparation_unstarted.get(str(attempt))
+                    if no_start is not None:
+                        if has_exit_proof or _read(attempt / 'preparation-not-started.json', self.owner) != no_start:
+                            _fail('BOOTSTRAP_UNRESOLVED', 'Original preparation no-start proof conflicts')
+                        observed_unstarted.add(str(attempt))
                     attempt_boot = preparation_boots.get(str(attempt), record.get('boot_id'))
                     if str(attempt) in preparation_boots:
                         if (attempt == current_attempt and record.get('boot_id') is not None
@@ -414,9 +422,10 @@ class OfflineObserver:
                             _fail('BOOTSTRAP_UNRESOLVED', 'Current preparation boot binding conflicts')
                         observed_attempts.add(str(attempt))
                     if (not isinstance(proof, dict) or type(proof.get("returncode")) is not int):
-                        if attempt_boot in (None, startup.boot_id()):
+                        if no_start is None and attempt_boot in (None, startup.boot_id()):
                             _fail("BOOTSTRAP_UNRESOLVED", "Preparation delivery is not closed")
-                    fingerprints.append(digest({"delivery": data, "exit": proof}))
+                    fingerprints.append(digest({"delivery": data, "exit": proof,
+                                                **({'not_started': no_start} if no_start is not None else {})}))
                 output = attempt / "execution"
                 if attempt != current_attempt and (_exists(output / "launch-intent.json") or _exists(output / "started.json")):
                     result = _read(attempt / "result.json", self.owner, 2 * 1024 * 1024)
@@ -426,8 +435,11 @@ class OfflineObserver:
                                     launch["controller_envelope"]["controller"].get("boot_id"))
         if observed_attempts != set(preparation_boots):
             _fail('BOOTSTRAP_UNRESOLVED', 'Original preparation boot binding was not observed')
+        if observed_unstarted != set(preparation_unstarted):
+            _fail('BOOTSTRAP_UNRESOLVED', 'Original preparation no-start binding was not observed')
         return {"records": records, "attempts": attempts, "digest": digest(fingerprints),
-                **({'preparation_boots': preparation_boots} if preparation_boots else {})}
+                **({'preparation_boots': preparation_boots} if preparation_boots else {}),
+                **({'preparation_unstarted': preparation_unstarted} if preparation_unstarted else {})}
 
     def entry_installation(self, component, candidates=None):
         candidates = candidates or {}

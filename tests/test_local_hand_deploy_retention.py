@@ -366,3 +366,212 @@ class PreparationRetentionTests(unittest.TestCase):
                     self.f.gate.finish(execution, {'process_exited': True, 'writers_stopped': True})
                 with self.assertRaisesRegex(Exception, 'retained execution history'):
                     build_plan(self.f.manifest)
+
+    def historical_preparation_drain(self):
+        from admin.local_hand_deploy import bootstrap
+        b = bootstrap_fixtures.BootstrapTests(); b.setUp(); self.addCleanup(b.doCleanups)
+        directory, _, _ = b.record()
+        record = bootstrap._read(directory / 'current.json', b.uid)
+        b.write(directory / 'current.json', {**record, 'principal_id': 'owner'})
+        config = bootstrap._read(b.candidate, b.uid)
+        b.write(b.config, config)
+        gate = maintenance.MaintenanceGate(b.gate_dir, 'node', owner_uid=b.uid)
+        gate.initialize('a' * 64, 'fixture', bootstrap=True)
+        loaded = maintenance.loaded_configuration(config, boot_id='11111111-1111-4111-8111-111111111111')
+        duties = []
+        for serial in (2, 3):
+            attempt = directory / ('attempt-' + str(serial)); attempt.mkdir(mode=0o700)
+            unit = 'lhprepare' + directory.name.replace('-', '') + 'a' + str(serial) + '.service'
+            b.write(attempt / 'preparation-delivery.json', {'command': ['systemd-run', '--unit=' + unit,
+                    str(attempt / 'input.json'), str(attempt / 'result.json')]})
+            binding = {'arguments': {'operation_id': directory.name, 'kind': 'host.inspect', 'profile_ref': 'fixture'},
+                       'principal_id': 'owner', 'private_root': str(b.records)}
+            duty = gate.accept('prepare', directory.name, str(attempt), binding, loaded)
+            gate.dispatch(duty); duties.append(duty)
+        environment = ConcreteEnvironment({'profile': b.profile}, b.store, gate)
+        return b, gate, environment, duties
+
+    def test_partial_reboot_closure_reuses_the_closed_attempt_original_boot(self):
+        from admin.local_hand_deploy import bootstrap
+        b, gate, environment, duties = self.historical_preparation_drain()
+        gate.close('recover', expected=gate.snapshot())
+        finish = gate.finish
+        def interrupt(receipt, proof):
+            finish(receipt, proof)
+            raise RuntimeError('interrupted after durable closure')
+        with patch.object(bootstrap, 'OfflineObserver', return_value=b.observer), \
+                patch.object(gate, 'finish', side_effect=interrupt), \
+                self.assertRaisesRegex(RuntimeError, 'interrupted after durable closure'):
+            environment.drain({'id': 'recover'})
+        before = gate.snapshot()['responsibilities']
+        closed = next(duty for duty in before.values() if duty['state'] == 'CLOSED')
+        self.assertEqual(['CLOSED', 'DISPATCHING'], sorted(duty['state'] for duty in before.values()))
+        with patch.object(bootstrap, 'OfflineObserver', return_value=b.observer):
+            self.assertTrue(environment.drain({'id': 'recover'})['quiescent'])
+        self.assertEqual(closed, gate.snapshot()['responsibilities'][closed['id']])
+        self.assertTrue(all(duty['state'] == 'CLOSED' for duty in gate.snapshot()['responsibilities'].values()))
+        self.assertTrue(all(not (Path(duty['attempt_id']) / 'preparation-exit.json').exists() for duty in duties))
+
+    def test_old_never_started_delivery_does_not_block_another_reboot_closure(self):
+        from admin.local_hand_deploy import bootstrap
+        b, gate, environment, duties = self.historical_preparation_drain()
+        first = duties[0]
+        proof = {'schema': 'local-hand-preparation-not-started/v1', 'admission_id': first['id'],
+                 'binding_digest': first['binding_digest']}
+        b.write(Path(first['attempt_id']) / 'preparation-not-started.json', proof)
+        gate.finish(first, {'never_dispatched': True})
+        original = gate.snapshot()['responsibilities'][first['id']]
+        gate.close('recover', expected=gate.snapshot())
+        with patch.object(bootstrap, 'OfflineObserver', return_value=b.observer):
+            self.assertTrue(environment.drain({'id': 'recover'})['quiescent'])
+        self.assertEqual(original, gate.snapshot()['responsibilities'][first['id']])
+
+    def current_unstarted_preparation(self, b, gate):
+        from admin.local_hand_deploy import bootstrap
+        operation = '44444444-4444-4444-8444-444444444444'
+        directory = b.records / operation; directory.mkdir(mode=0o700)
+        attempt = directory / 'attempt-4'; attempt.mkdir(mode=0o700)
+        unit = 'lhprepare' + operation.replace('-', '') + 'a4.service'
+        config = bootstrap._read(b.config, b.uid)
+        loaded = maintenance.loaded_configuration(config, boot_id=startup.boot_id())
+        binding = {'arguments': {'operation_id': operation, 'kind': 'host.inspect', 'profile_ref': 'fixture'},
+                   'principal_id': 'owner', 'private_root': str(b.records)}
+        duty = gate.accept('prepare', operation, str(attempt), binding, loaded)
+        gate.dispatch(duty)
+        b.write(directory / 'current.json', {'operation_id': operation, 'principal_id': 'owner',
+                'attempt': str(attempt), 'boot_id': startup.boot_id(), 'prepare_unit': unit, 'state': 'FAILED'})
+        b.write(attempt / 'preparation-delivery.json', {'command': ['systemd-run', '--unit=' + unit,
+                str(attempt / 'input.json'), str(attempt / 'result.json')]})
+        proof = {'schema': 'local-hand-preparation-not-started/v1', 'admission_id': duty['id'],
+                 'binding_digest': duty['binding_digest']}
+        b.write(attempt / 'preparation-not-started.json', proof)
+        gate.finish(duty, {'never_dispatched': True})
+        return duty, proof, unit
+
+    def test_current_boot_no_start_proof_preserves_unrelated_reboot_recovery(self):
+        from admin.local_hand_deploy import bootstrap
+        b, gate, environment, _ = self.historical_preparation_drain()
+        duty, proof, _ = self.current_unstarted_preparation(b, gate)
+        original = gate.snapshot()['responsibilities'][duty['id']]
+        gate.close('recover', expected=gate.snapshot())
+        with patch.object(bootstrap, 'OfflineObserver', return_value=b.observer):
+            self.assertTrue(environment.drain({'id': 'recover'})['quiescent'])
+        self.assertEqual(original, gate.snapshot()['responsibilities'][duty['id']])
+        attempt = Path(duty['attempt_id'])
+        self.assertFalse((attempt / 'preparation-exit.json').exists())
+        self.assertEqual(proof, bootstrap._read(attempt / 'preparation-not-started.json', b.uid))
+
+    def test_mixed_boot_drain_first_reconciles_current_no_start_responsibility(self):
+        from admin.local_hand_deploy import bootstrap
+        b, gate, environment, old = self.historical_preparation_drain()
+        with patch.object(gate, 'finish'):
+            duty, _, _ = self.current_unstarted_preparation(b, gate)
+        gate.close('recover', expected=gate.snapshot())
+        def reconcile(component, *, reconcile):
+            self.assertEqual('manager', component); self.assertTrue(reconcile)
+            gate.finish(duty, {'never_dispatched': True})
+            return {'reconciled': True}
+        with patch.object(bootstrap, 'OfflineObserver', return_value=b.observer), \
+                patch.object(environment, '_probe', side_effect=reconcile) as probe:
+            self.assertTrue(environment.drain({'id': 'recover'})['quiescent'])
+        probe.assert_called_once_with('manager', reconcile=True)
+        records = gate.snapshot()['responsibilities']
+        self.assertEqual({'never_dispatched': True}, records[duty['id']]['proof'])
+        for original in old:
+            self.assertEqual('CLOSED', records[original['id']]['state'])
+            self.assertEqual({'process_exited': True, 'writers_stopped': True}, records[original['id']]['proof'])
+            self.assertFalse((Path(original['attempt_id']) / 'preparation-exit.json').exists())
+
+    def test_mixed_boot_reconciliation_rechecks_gate_ownership_before_old_closure(self):
+        for change in ('owner', 'state'):
+            with self.subTest(change=change):
+                b, gate, environment, old = self.historical_preparation_drain()
+                with patch.object(gate, 'finish'):
+                    current, _, _ = self.current_unstarted_preparation(b, gate)
+                gate.close('recover', expected=gate.snapshot())
+                def changed(component, *, reconcile):
+                    if change == 'owner':gate.handoff('recover', 'different-owner')
+                    else:gate.release('recover', 'different-decision', 'a' * 64)
+                    return {'observed': True}
+                with patch.object(environment, '_probe', side_effect=changed) as probe, \
+                        patch.object(preparations, 'observe_reboot_closure') as observe:
+                    with self.assertRaisesRegex(Exception, 'maintenance ownership'):
+                        environment.drain({'id': 'recover'})
+                probe.assert_called_once_with('manager', reconcile=True); observe.assert_not_called()
+                records = gate.snapshot()['responsibilities']
+                self.assertTrue(all(records[duty['id']]['state'] == 'DISPATCHING' for duty in [*old, current]))
+
+    def test_closed_history_requires_its_exact_delivery_before_reuse(self):
+        from admin.local_hand_deploy import bootstrap
+        b, gate, environment, duties = self.historical_preparation_drain()
+        gate.finish(duties[0], {'process_exited': True, 'writers_stopped': True})
+        delivery = Path(duties[0]['attempt_id']) / 'preparation-delivery.json'
+        original = delivery.read_bytes()
+        b.write(delivery, {'command': ['systemd-run', '--unit=unrelated.service']})
+        gate.close('recover', expected=gate.snapshot())
+        with patch.object(bootstrap, 'OfflineObserver', return_value=b.observer):
+            with self.assertRaisesRegex(Exception, 'binding'):
+                environment.drain({'id': 'recover'})
+            self.assertEqual('DISPATCHING', gate.snapshot()['responsibilities'][duties[1]['id']]['state'])
+            delivery.write_bytes(original)
+            self.assertTrue(environment.drain({'id': 'recover'})['quiescent'])
+
+    def test_closed_unpublished_history_does_not_invent_observer_attempts(self):
+        from admin.local_hand_deploy import bootstrap
+        b, gate, environment, _ = self.historical_preparation_drain()
+        config = bootstrap._read(b.config, b.uid)
+        loaded = maintenance.loaded_configuration(config, boot_id='11111111-1111-4111-8111-111111111111')
+        for root in (b.records, b.root / 'previous-records-root'):
+            operation = '55555555-5555-4555-8555-555555555555'
+            attempt = root / operation / 'attempt-5'
+            binding = {'arguments': {'operation_id': operation, 'kind': 'host.inspect', 'profile_ref': 'fixture'},
+                       'principal_id': 'owner', 'private_root': str(root)}
+            duty = gate.accept('prepare', operation, str(attempt), binding, loaded)
+            gate.finish(duty, {'never_dispatched': True})
+        gate.close('recover', expected=gate.snapshot())
+        with patch.object(bootstrap, 'OfflineObserver', return_value=b.observer):
+            self.assertTrue(environment.drain({'id': 'recover'})['quiescent'])
+        self.assertFalse((b.records / operation).exists())
+        self.assertFalse((b.root / 'previous-records-root').exists())
+
+    def test_no_start_recovery_rejects_wrong_receipt_live_jobs_and_contradictory_exit(self):
+        from admin.local_hand_deploy import bootstrap
+        b, gate, environment, duties = self.historical_preparation_drain()
+        duty, proof, unit = self.current_unstarted_preparation(b, gate)
+        attempt = Path(duty['attempt_id'])
+        gate.close('recover', expected=gate.snapshot())
+        with patch.object(bootstrap, 'OfflineObserver', return_value=b.observer):
+            for key, value in (('admission_id', '0' * 32), ('binding_digest', '0' * 64)):
+                with self.subTest(key=key):
+                    b.write(attempt / 'preparation-not-started.json', {**proof, key: value})
+                    with self.assertRaisesRegex(Exception, 'no-start binding differs'):
+                        environment.drain({'id': 'recover'})
+            b.write(attempt / 'preparation-not-started.json', proof)
+            b.bus.pending = [(1, unit)]
+            with self.assertRaisesRegex(Exception, 'not closed'):
+                environment.drain({'id': 'recover'})
+            b.bus.pending = []
+            for exit_proof in ({'returncode': 0}, None):
+                with self.subTest(exit_proof=exit_proof):
+                    b.write(attempt / 'preparation-exit.json', exit_proof)
+                    with self.assertRaisesRegex(Exception, 'no-start proof conflicts'):
+                        environment.drain({'id': 'recover'})
+            (attempt / 'preparation-exit.json').unlink()
+            self.assertTrue(all(gate.snapshot()['responsibilities'][item['id']]['state'] == 'DISPATCHING'
+                                for item in duties))
+            self.assertTrue(environment.drain({'id': 'recover'})['quiescent'])
+
+    def test_no_start_proof_is_rechecked_by_the_independent_observer(self):
+        from admin.local_hand_deploy import bootstrap
+        b, gate, environment, duties = self.historical_preparation_drain()
+        duty, proof, _ = self.current_unstarted_preparation(b, gate)
+        gate.close('recover', expected=gate.snapshot())
+        observe = b.observer.duties
+        def changed(*args, **kwargs):
+            b.write(Path(duty['attempt_id']) / 'preparation-not-started.json', {**proof, 'admission_id': '0' * 32})
+            return observe(*args, **kwargs)
+        with patch.object(bootstrap, 'OfflineObserver', return_value=b.observer), \
+                patch.object(b.observer, 'duties', side_effect=changed), \
+                self.assertRaisesRegex(Exception, 'no-start proof conflicts'):
+            environment.drain({'id': 'recover'})
+        self.assertTrue(all(gate.snapshot()['responsibilities'][item['id']]['state'] == 'DISPATCHING' for item in duties))

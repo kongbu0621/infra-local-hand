@@ -39,14 +39,10 @@ class PolicyEnvironment(Effects):
             persist_intent=persist_intent, previous=binding), prepared)
 
     def prepare_compensation(self, op):
-        result = []
-        for step, record in zip(op['plan']['steps'], op['steps']):
-            if not record['effective']:
-                continue
-            action = {**step['action'], 'before': _link_state(step['action']['path']),
-                      'after': copy.deepcopy(step['action']['before'])}
-            result.append({'step': {**step, 'id': 'restore-policy', 'action': action}, 'prepared': action})
-        return result
+        environment = ConcreteEnvironment({'profile': {}}, self.store, None)
+        environment._services, environment._runner = self.adapter, self.adapter.runner
+        with patch.object(self.adapter, 'observe', return_value={'units': {}, 'jobs': []}):
+            return environment.prepare_compensation(op)
 
 
 class PolicySyncTests(unittest.TestCase):
@@ -110,6 +106,103 @@ class PolicySyncTests(unittest.TestCase):
         current = _link_state(self.path)
         self.assertNotEqual(original['ino'], current['ino'])
         return current
+
+    def replace_reusing_inode(self):
+        original = self.path.lstat()
+        for _ in range(10000):
+            self.path.unlink()
+            os.symlink('/fixture/unit.service', self.path)
+            current = self.path.lstat()
+            if current.st_ino == original.st_ino:
+                self.assertNotEqual(original.st_ctime_ns, current.st_ctime_ns)
+                return _link_state(self.path)
+        self.skipTest('filesystem did not reuse the original inode within the bounded probe')
+
+    def test_reused_inode_is_not_a_success_receipt_or_restoration_identity(self):
+        action = self.action()
+        result = self.execute(action, 'reuse-original')
+        independent = self.replace_reusing_inode()
+        observed = self.adapter.observe_action(action, result['attempt'], lock_fd=self.fd)
+        self.assertEqual('conflict', observed['outcome'])
+        self.assertFalse(observed['postcondition'])
+        with self.assertRaisesRegex(AdapterError, 'RESTORE_POLICY_LINK'):
+            self.concrete().prepare_compensation(self.operation(action, result))
+        self.assertEqual(independent, _link_state(self.path))
+
+    def test_remove_precondition_does_not_accept_a_reused_inode(self):
+        action = self.action(remove=True)
+        independent = self.replace_reusing_inode()
+        with self.assertRaisesRegex(AdapterError, 'CONFLICT'):
+            self.execute(action, 'remove-reused-precondition')
+        self.assertEqual(independent, _link_state(self.path))
+
+    def test_weak_historical_receipt_cannot_supply_current_object_identity(self):
+        action = self.action()
+        result = self.execute(action, 'weak-receipt')
+        receipt_path = Path(result['attempt']['binding']['result_directory']) / 'result.json'
+        original_receipt = receipt_path.read_bytes()
+        real_observe = self.adapter.runner.observe
+        def old_receipt(binding, **kwargs):
+            value = copy.deepcopy(real_observe(binding, **kwargs))
+            value['events'] = []
+            value['result']['value']['link'].pop('binding', None)
+            return value
+        with patch.object(self.adapter.runner, 'observe', side_effect=old_receipt):
+            observed = self.adapter.observe_action(action, result['attempt'], lock_fd=self.fd)
+            self.assertTrue(observed['closed'])
+            self.assertEqual('conflict', observed['outcome'])
+            self.assertFalse(observed['postcondition'])
+            self.assertTrue(observed['effective'], 'a weak object identity does not erase the original effect')
+            with self.assertRaisesRegex(AdapterError, 'CONFLICT'):
+                self.execute(action, None, previous=result['attempt'])
+            with self.assertRaisesRegex(AdapterError, 'RESTORE_POLICY_LINK'):
+                self.concrete().prepare_compensation(self.operation(action, result))
+        # A newly authorized correction binds today's exact object and can
+        # proceed without upgrading or rewriting the old weak receipt.
+        correction = {**action, 'before': _link_state(self.path), 'after': {'kind': 'absent'}}
+        self.assertTrue(self.execute(correction, 'explicit-correction')['postcondition'])
+        self.assertEqual(original_receipt, receipt_path.read_bytes())
+
+    def test_historical_successful_removal_still_proves_synchronized_absence(self):
+        action = self.action(remove=True)
+        action['before'].pop('binding')
+        def old_remove(action, emit):
+            os.unlink(action['path'])
+            directory = os.open(self.links, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+            return {'link': {'kind': 'absent'}}
+        result = self.adapter.runner.run(action, old_remove, attempt_id='historical-remove',
+            lock_fd=self.fd, persist_intent=lambda _: None)
+        with patch('os.fsync', side_effect=AssertionError('already synchronized')):
+            resumed = self.execute(action, None, previous=result)
+        self.assertTrue(resumed['postcondition'])
+        self.assertTrue(resumed['synced'])
+
+    def test_recorded_effect_with_wrong_after_value_is_not_replayed_as_original(self):
+        action = self.action()
+        symlink = os.symlink
+        def independently_remove(target, path):
+            symlink(target, path)
+            os.unlink(path)
+        with patch('os.symlink', side_effect=independently_remove):
+            result = self.execute(action, 'after-value-conflict')
+        self.assertEqual({'kind': 'absent'}, _link_state(self.path))
+        self.assertEqual('conflict', result['outcome'])
+        self.assertTrue(result['effective'])
+        self.assertFalse(result['postcondition'])
+        with patch('os.symlink', side_effect=AssertionError('must not replay inconsistent effect')), \
+                self.assertRaisesRegex(AdapterError, 'CONFLICT'):
+            self.execute(action, 'retry-inconsistent-effect', previous=result['attempt'])
+
+    def test_another_action_cannot_reuse_a_successful_link_receipt(self):
+        action = self.action()
+        result = self.execute(action, 'bound-original')
+        different = {**action, 'before': _link_state(self.path)}
+        with self.assertRaisesRegex(AdapterError, 'ATTEMPT_BINDING_CONFLICT'):
+            self.adapter.observe_action(different, result['attempt'], lock_fd=self.fd)
 
     def test_same_target_replacement_is_not_adopted_after_success_or_sync_failure(self):
         for failed in (False, True):
@@ -321,6 +414,25 @@ class PolicySyncTests(unittest.TestCase):
         self.assertTrue(final['steps'][1]['observation']['synced'])
         self.assertEqual([1, 1], [len(record['attempts']) for record in final['steps']])
         self.assertEqual(original, _link_state(self.path))
+
+    def test_lost_acknowledgment_and_later_drift_do_not_erase_a_recorded_effect(self):
+        coordinator, store, environment, plan = self.coordinator(self.action())
+        execute = environment.execute
+        def lose_return(*args, **kwargs):
+            execute(*args, **kwargs)
+            self.replace_independently()
+            raise OSError('lost return after a recorded effect and independent replacement')
+        with patch.object(environment, 'execute', side_effect=lose_return):
+            interrupted = coordinator.apply(plan)
+        self.assertFalse(interrupted['steps'][0]['effective'])
+        independent = _link_state(self.path)
+        restored = coordinator.rollback(interrupted['id'])
+        self.assertTrue(restored['steps'][0]['effective'])
+        self.assertEqual('conflict', restored['steps'][0]['observation']['state'])
+        self.assertIsNone(restored['decision'])
+        self.assertFalse(restored['released'])
+        self.assertEqual('CLOSED', coordinator.gate.snapshot()['state'])
+        self.assertEqual(independent, _link_state(self.path))
 
     def test_compensation_does_not_finish_until_removed_link_is_synced(self):
         coordinator, store, environment, plan = self.coordinator(self.action())

@@ -402,15 +402,25 @@ class GatewayAdapter:
                             "original": before, "after": desired, "subeffects": ["create"], "phase": "after_files"})
         if desired["present"] and desired["running"] and (before.get("status") != "running" or changed):
             actions.append({"kind": "gateway_start", "target": self.service, "before": before,
-                            "after": desired, "subeffects": ["start"], "phase": "after_create"})
+                            "after": desired, "subeffects": ["start"], "phase": "after_create",
+                            "requires_create": any(action['kind'] == 'gateway_create' for action in actions)})
         return [{**action, "compose": self.profile["compose"]} for action in actions]
 
-    def plan_restore(self, original_actions, observations=None):
+    def plan_restore(self, original_actions, observations=None, *, creation_observations=()):
         if not original_actions:
             return []
         old = original_actions[0].get("original", original_actions[0]["before"])
+        current = self.observe(require_route=False) if observations is None else observations
+        if current['kind'] == 'container':
+            retained = [action['before'] for action in original_actions if action['before'].get('kind') == 'container']
+            retained += [value['observation'] for value in creation_observations
+                         if value.get('outcome') == 'target' and value.get('closed') is True
+                         and value.get('observation', {}).get('kind') == 'container']
+            if not any(value.get('id') == current['id'] and value.get('daemon_id') == current['daemon_id']
+                       for value in retained):
+                raise AdapterError('RESTORE_GATEWAY_IDENTITY')
         if old["kind"] == "absent":
-            return self.plan({"present": False, "running": False}, observations)
+            return self.plan({"present": False, "running": False}, current)
         if not old.get("compose"):
             raise AdapterError("ORIGINAL_GATEWAY_COMPOSE_REQUIRED")
         configuration = self._configuration(old)
@@ -418,7 +428,6 @@ class GatewayAdapter:
                for value in configuration.values()):
             raise AdapterError("ORIGINAL_GATEWAY_CONFIGURATION_BINDING_REQUIRED")
         restored = self._using(old["compose"])
-        current = restored.observe(require_route=False) if observations is None else observations
         current = self._retain_original_binding(current, old)
         return restored.plan({"present": True, "running": old["status"] == "running",
                               **configuration}, current)
@@ -501,17 +510,87 @@ class GatewayAdapter:
                 return True
         return False
 
-    def observe_action(self, action, previous=None, *, lock_fd=None):
+    def creation_identity(self, action, previous, *, observation=None, lock_fd=None):
+        """Recover a fixed creation ID from retained evidence, never a new inspect."""
+        if not previous or action.get('kind') != 'gateway_create':
+            return None
+        binding = previous.get('binding', previous)
+        if binding.get('action_digest') != digest({**action, 'attempt_id': binding['attempt_id']}):
+            raise AdapterError('GATEWAY_ATTEMPT_BINDING_CONFLICT')
+        retained = previous.get('effect_identity')
+        if retained is not None and (set(retained) != {'daemon_id', 'container_id', 'attempt_id'}
+                or retained['daemon_id'] != self.profile['daemon_id']
+                or retained['attempt_id'] != binding['attempt_id']
+                or not isinstance(retained['container_id'], str) or not retained['container_id']):
+            raise AdapterError('GATEWAY_EFFECT_IDENTITY_CONFLICT')
+        saved = observation or {}
+        supervised = saved.get('supervision')
+        if not isinstance(supervised, dict) or supervised.get('binding') != binding:
+            supervised = self.runner.observe(binding, lock_fd=lock_fd)
+        ids = set()
+        events = supervised.get('events', [])
+        if supervised.get('closed') and self._dispatch_identity(action, events):
+            ids.update(event['container_id'] for event in events
+                if event.get('kind') == 'engine_returned' and event.get('action') == 'gateway_create'
+                and isinstance(event.get('container_id'), str) and event['container_id'])
+            result = supervised.get('result') or {}
+            returned = result.get('value') if result.get('status') == 'returned' else None
+            if isinstance(returned, dict) and isinstance(returned.get('container_id'), str) and returned['container_id']:
+                ids.add(returned['container_id'])
+            value = saved.get('observation') or {}
+            if (saved.get('state', saved.get('outcome')) == 'target' and saved.get('closed') is True
+                    and saved.get('supervision', {}).get('binding') == binding
+                    and value.get('kind') == 'container' and value.get('daemon_id') == self.profile['daemon_id']
+                    and value.get('labels', {}).get('local-hand.deploy.attempt') == binding['attempt_id']
+                    and all(self._configuration(value).get(key) == action['after'].get(key)
+                            for key in ('config_digest', 'deployment_digest'))):
+                ids.add(value['id'])
+        if retained is not None:
+            ids.add(retained['container_id'])
+        if len(ids) > 1:
+            raise AdapterError('GATEWAY_EFFECT_IDENTITY_CONFLICT')
+        return ({'daemon_id': self.profile['daemon_id'], 'container_id': next(iter(ids)),
+                 'attempt_id': binding['attempt_id']} if ids else None)
+
+    def _start_identity(self, action, expected):
+        if expected is not None:
+            if (expected.get('daemon_id') != self.profile['daemon_id']
+                    or not isinstance(expected.get('container_id'), str) or not expected['container_id']):
+                raise AdapterError('GATEWAY_START_IDENTITY_REQUIRED')
+            return expected['container_id']
+        before = action['before']
+        if (action.get('requires_create') or before.get('kind') != 'container'
+                or before.get('compose') != action.get('compose', self.profile['compose'])
+                or any(self._configuration(before).get(key) != action['after'].get(key)
+                       for key in ('config_digest', 'deployment_digest'))):
+            return None
+        return before['id']
+
+    def observe_action(self, action, previous=None, *, lock_fd=None, require_route=None, expected_identity=None):
         self._validate_action(action)
         adapter = self._using(action.get("compose", self.profile["compose"]))
         if adapter is not self:
-            return adapter.observe_action(action, previous, lock_fd=lock_fd)
+            return adapter.observe_action(action, previous, lock_fd=lock_fd, require_route=require_route,
+                                          expected_identity=expected_identity)
+        binding = previous.get('binding', previous) if previous else None
+        if binding and binding.get('action_digest') != digest({**action, 'attempt_id': binding['attempt_id']}):
+            raise AdapterError('GATEWAY_ATTEMPT_BINDING_CONFLICT')
         supervised = self.runner.observe(previous.get("binding", previous), lock_fd=lock_fd) if previous else None
         if supervised and not supervised["closed"]:
             return {"outcome": "running", "closed": False, "postcondition": False, "supervision": supervised,
                     "dispatched": None}
         kind = action["kind"]
-        value = self._retain_original_binding(self.observe(require_route=kind not in {"gateway_stop", "gateway_remove"}), action["before"])
+        value = self._retain_original_binding(self.observe(require_route=False), action["before"])
+        start_id = self._start_identity(action, expected_identity) if kind == 'gateway_start' else None
+        if (kind == 'gateway_start' and require_route is not False and value.get('status') == 'running'
+                and value.get('id') == start_id and self.route_probe is not None):
+            try:
+                value['route'] = self.route_probe(value['id'])
+            except (OSError, RuntimeError, ValueError) as error:
+                # Readiness failure cannot strand an otherwise closed original
+                # Engine call and prevent stopping its exactly bound container.
+                value['route'] = None
+                value['route_error'] = {'error_type': type(error).__name__, 'error': str(error)[:512]}
         result = supervised and supervised.get("result") or {}
         events = supervised["events"] if supervised else []
         dispatch_recorded = supervised and any(event.get("kind") == "engine_dispatch" for event in events)
@@ -521,6 +600,17 @@ class GatewayAdapter:
         # Engine stop/start/create may outlive a broken HTTP request. Exact
         # matching container/attempt effects are adoptable; original values alone
         # are never a retry proof following an unknown response.
+        created = set()
+        fixed_identity = self.creation_identity(action, previous, lock_fd=lock_fd) if kind == 'gateway_create' else None
+        if fixed_identity:
+            created.add(fixed_identity['container_id'])
+        if kind == 'gateway_create' and self._dispatch_identity(action, events):
+            created.update(event['container_id'] for event in events
+                           if event.get('kind') == 'engine_returned' and event.get('action') == kind
+                           and isinstance(event.get('container_id'), str) and event['container_id'])
+            returned = result.get('value') if result.get('status') == 'returned' else None
+            if isinstance(returned, dict) and isinstance(returned.get('container_id'), str) and returned['container_id']:
+                created.add(returned['container_id'])
         if kind == "gateway_remove":
             target = value["kind"] == "absent"
         elif kind == "gateway_stop":
@@ -529,11 +619,15 @@ class GatewayAdapter:
             labels = value.get("labels", {})
             target = value["kind"] == "container" and all(self._configuration(value).get(key) == action["after"].get(key)
                 for key in ("config_digest", "deployment_digest"))
-            if previous and kind == "gateway_create":
-                target = target and labels.get("local-hand.deploy.attempt") == previous.get("binding", previous)["attempt_id"]
+            if kind == "gateway_create":
+                target = (target and binding is not None and not not_sent and bool(self._dispatch_identity(action, events))
+                          and labels.get("local-hand.deploy.attempt") == binding['attempt_id']
+                          and (not previous.get('effect_identity_required') or fixed_identity is not None)
+                          and (not created or created == {value['id']}))
             if kind == "gateway_start":
                 route = value.get("route") or {}
-                target = (target and value.get("status") == "running" and route.get("container_id") == value["id"]
+                target = (target and start_id is not None and value.get('id') == start_id
+                          and value.get("status") == "running" and route.get("container_id") == value["id"]
                           and route.get("config_digest") == action["after"]["config_digest"] and route.get("protocol_ready") is True)
         # Losing a live status endpoint must not prevent stopping the exact
         # frozen container. Engine identity/config remain fully checked above;
@@ -555,19 +649,26 @@ class GatewayAdapter:
         # boundary. Lost response may be adopted ONLY for its exact target; no
         # retry against original/absent state without daemon-side completion proof.
         closed = completed or target
-        outcome = "target" if target and closed else "unknown" if not closed else "original" if original else "partial" if value.get("status") == "stopped" else "conflict"
-        return {"outcome": outcome, "postcondition": target and closed, "closed": closed,
+        outcome = ("target" if target and closed else "unknown" if not closed else "original" if original
+                   else "conflict" if kind == 'gateway_create' or kind == 'gateway_start' and value.get('id') != start_id
+                   else "partial" if value.get("status") == "stopped" else "conflict")
+        observed = {"outcome": outcome, "postcondition": target and closed, "closed": closed,
                 "observation": value, "supervision": supervised,
                 "proof": "satisfied_observed" if target and not completed else "observed",
+                **({'effective': bool(created) or target} if kind == 'gateway_create' else {}),
                 "dispatched": bool(dispatch_recorded and not not_sent)}
+        if kind == 'gateway_create' and target:
+            observed['effect_identity'] = self.creation_identity(action, previous, observation=observed, lock_fd=lock_fd)
+        return observed
 
-    def execute(self, action, *, attempt_id, lock_fd, persist_intent, previous=None):
+    def execute(self, action, *, attempt_id, lock_fd, persist_intent, previous=None, expected_identity=None):
         self._validate_action(action)
         adapter = self._using(action.get("compose", self.profile["compose"]))
         if adapter is not self:
-            return adapter.execute(action, attempt_id=attempt_id, lock_fd=lock_fd, persist_intent=persist_intent, previous=previous)
+            return adapter.execute(action, attempt_id=attempt_id, lock_fd=lock_fd, persist_intent=persist_intent,
+                                   previous=previous, expected_identity=expected_identity)
         verify_lock(lock_fd)
-        observed = self.observe_action(action, previous, lock_fd=lock_fd)
+        observed = self.observe_action(action, previous, lock_fd=lock_fd, expected_identity=expected_identity)
         if observed["postcondition"] or not observed["closed"]:
             return observed
         if observed["outcome"] == "conflict":
@@ -585,9 +686,13 @@ class GatewayAdapter:
                            attempt_id=attempt_id, allow_stopped=action["kind"] == "gateway_create")
         self.prerequisites(starting=action["kind"] == "gateway_start")
         augmented = {**action, "attempt_id": attempt_id}
-        outcome = self.runner.run(augmented, self._perform, attempt_id=attempt_id, lock_fd=lock_fd,
+        perform = lambda command, emit: self._perform(command, emit, expected_identity=expected_identity)
+        outcome = self.runner.run(augmented, perform, attempt_id=attempt_id, lock_fd=lock_fd,
                                   persist_intent=persist_intent)
-        return {**self.observe_action(action, outcome, lock_fd=lock_fd), "attempt": outcome}
+        observed = self.observe_action(action, outcome, lock_fd=lock_fd, expected_identity=expected_identity)
+        if observed.get('effect_identity'):
+            outcome['effect_identity'] = observed['effect_identity']
+        return {**observed, "attempt": outcome}
 
     def _create_body(self, target, attempt_id):
         source = self.profile["compose"]["services"][self.service]
@@ -615,11 +720,11 @@ class GatewayAdapter:
                 body[destination] = source[source_key]
         return body
 
-    def _perform(self, action, emit):
+    def _perform(self, action, emit, *, expected_identity=None):
         self._validate_action(action)
         adapter = self._using(action.get("compose", self.profile["compose"]))
         if adapter is not self:
-            return adapter._perform(action, emit)
+            return adapter._perform(action, emit, expected_identity=expected_identity)
         self.prerequisites(starting=action["kind"] == "gateway_start")
         kind = action["kind"]
         value = self.observe(require_route=kind not in {"gateway_stop", "gateway_remove"})
@@ -634,6 +739,8 @@ class GatewayAdapter:
             raise AdapterError("GATEWAY_CONTAINER_MISSING")
         if kind in ("gateway_stop", "gateway_remove") and value["id"] != action["before"]["id"]:
             raise AdapterError("GATEWAY_CONTAINER_ID_CHANGED")
+        if kind == 'gateway_start' and value['id'] != self._start_identity(action, expected_identity):
+            raise AdapterError('GATEWAY_CONTAINER_ID_CHANGED')
         if kind == "gateway_remove" and value["status"] != "stopped":
             raise AdapterError("GATEWAY_REMOVE_REQUIRES_STOPPED")
         path = "/containers/" + _quote(value["id"])

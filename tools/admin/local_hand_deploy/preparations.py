@@ -237,6 +237,8 @@ def original_preparation(profile, duty, *, configuration=None):
     ACCEPTED predates all dispatch and may predate every task directory. A
     dispatched old attempt still needs its own delivery and retained task root;
     the caller must separately prove the original boot's processes/jobs closed.
+    Return whether an exact delivery remains, including never-started attempts
+    that wrote their command before failing to create a process.
     """
     owner = profile.get('owner_uid', 0)
     try:
@@ -274,19 +276,38 @@ def original_preparation(profile, duty, *, configuration=None):
             if (current.get('attempt') == duty['attempt_id'] and current.get('boot_id') is not None
                     and current['boot_id'] != duty['loaded']['boot_id']):
                 raise ValueError('attempt boot differs')
-        if not _never_dispatched(duty):
-            unit = 'lhprepare' + uuid.UUID(operation).hex + 'a' + attempt.name.removeprefix('attempt-') + '.service'
+        try:
             delivery = decode(startup.protected_read(attempt / 'preparation-delivery.json', owner_uid=owner))
-            command = delivery.get('command') if type(delivery) is dict else None
-            if (type(command) is not list or not all(type(arg) is str for arg in command)
-                    or [arg for arg in command if arg.startswith('--unit=')] != ['--unit=' + unit]
-                    or command[-2:] != [str(attempt / 'input.json'), str(attempt / 'result.json')]):
-                raise ValueError('delivery binding differs')
+        except JobError as error:
+            if _never_dispatched(duty) and isinstance(error.__cause__, FileNotFoundError):
+                return False
+            raise
+        unit = 'lhprepare' + uuid.UUID(operation).hex + 'a' + attempt.name.removeprefix('attempt-') + '.service'
+        command = delivery.get('command') if type(delivery) is dict else None
+        if (type(command) is not list or not all(type(arg) is str for arg in command)
+                or [arg for arg in command if arg.startswith('--unit=')] != ['--unit=' + unit]
+                or command[-2:] != [str(attempt / 'input.json'), str(attempt / 'result.json')]):
+            raise ValueError('delivery binding differs')
+        return True
     except (KeyError, TypeError, ValueError, JobError) as error:
         raise DeployError('RETAINED_DISPATCH_UNRESOLVED', 'Original preparation binding differs') from error
 
 
-def observe_reboot_closure(profile, component, *, expected_boot, current_boot, preparation_boots=None):
+def original_not_started(profile, duty):
+    """Read the original no-child receipt after preparation identity checking."""
+    proof = {'schema': 'local-hand-preparation-not-started/v1', 'admission_id': duty['id'],
+             'binding_digest': duty['binding_digest']}
+    if duty['state'] != 'CLOSED' or duty['proof'] != {'never_dispatched': True}:
+        raise DeployError('RETAINED_DISPATCH_UNRESOLVED', 'Original preparation has no closed non-delivery responsibility')
+    actual = decode(startup.protected_read(Path(duty['attempt_id']) / 'preparation-not-started.json',
+                                          owner_uid=profile.get('owner_uid', 0)))
+    if actual != proof:
+        raise DeployError('RETAINED_DISPATCH_UNRESOLVED', 'Original preparation no-start binding differs')
+    return proof
+
+
+def observe_reboot_closure(profile, component, *, expected_boot, current_boot, preparation_boots=None,
+                          preparation_unstarted=None):
     """Only actual old-boot task parents/jobs can discharge lost pipe custody.
 
     Reuse the offline import's bounded, independent systemd/cgroup observer.
@@ -322,10 +343,25 @@ def observe_reboot_closure(profile, component, *, expected_boot, current_boot, p
                 or type(boot) is not str or re.fullmatch(r'[0-9a-f-]{36}', boot) is None or boot == current_boot
                 for path, boot in preparation_boots.items())):
             raise DeployError('RETAINED_DISPATCH_UNRESOLVED', 'Original preparation boot binding differs')
+    if preparation_unstarted is not None:
+        root = Path(config['private_root']) if kind == 'resident' else None
+        if (type(preparation_unstarted) is not dict or root is None or any(
+                type(path) is not str or str(Path(path)) != path or Path(path).parent.parent != root
+                or re.fullmatch(r'attempt-[1-9][0-9]{0,19}', Path(path).name) is None
+                or type(proof) is not dict or set(proof) != {'schema', 'admission_id', 'binding_digest'}
+                or proof['schema'] != 'local-hand-preparation-not-started/v1'
+                or type(proof['admission_id']) is not str or re.fullmatch(r'[0-9a-f]{32}', proof['admission_id']) is None
+                or type(proof['binding_digest']) is not str or re.fullmatch(r'[0-9a-f]{64}', proof['binding_digest']) is None
+                for path, proof in preparation_unstarted.items())):
+            raise DeployError('RETAINED_DISPATCH_UNRESOLVED', 'Original preparation no-start binding differs')
     observer.deadline = time.monotonic() + profile.get("timeout_seconds", 30)
     with observer.bus_factory() as bus:
-        proof = (observer.duties(bus, entry, preparation_boots=preparation_boots)
-                 if preparation_boots else observer.duties(bus, entry))
+        bindings = {}
+        if preparation_boots:
+            bindings['preparation_boots'] = preparation_boots
+        if preparation_unstarted:
+            bindings['preparation_unstarted'] = preparation_unstarted
+        proof = observer.duties(bus, entry, **bindings)
     if startup.boot_id() != current_boot:
         raise DeployError("RETAINED_DISPATCH_UNRESOLVED", "Host boot changed while observing original task closure")
     return {"original_boot_id": expected_boot, "observed_boot_id": current_boot, "duties": proof}

@@ -268,6 +268,8 @@ class Coordinator:
             if record["prepared"] is None or not (record["attempts"] or record["effective"]
                     or record["state"] in {"VERIFIED", "RESTORED"}):
                 continue
+            if self._retain_effect_identity(step, record):
+                self.store.save(op, 'EFFECT_IDENTITY_RETAINED', {'step': step['id']}, recovery=True)
             key = self.environment.effect_key(step)
             if key in covered:
                 record["covered_by"] = covered[key]
@@ -276,6 +278,7 @@ class Coordinator:
             attempt = record["attempts"][-1] if record["attempts"] else None
             observed = self.environment.observe(step, record["prepared"], attempt)
             record["observation"] = observed
+            self._retain_effect_identity(step, record)
             record["effective"] = record["effective"] or observed.get("effective", False)
             if observed.get("state") == "target" and observed.get("closed") is True:
                 covered[key] = step["id"]
@@ -307,9 +310,12 @@ class Coordinator:
                 continue
             record.pop("covered_by", None)
             if record["restore_attempts"] or record["state"] == "RESTORED":
+                if self._retain_effect_identity(step, record, restore=True):
+                    self.store.save(op, 'EFFECT_IDENTITY_RETAINED', {'step': step['id'], 'restore': True}, recovery=True)
                 previous = record["restore_attempts"][-1] if record["restore_attempts"] else None
                 observed = self.environment.observe(step, record["restore"], previous)
                 record["restore_observation"] = observed
+                self._retain_effect_identity(step, record, restore=True)
                 if observed.get("state") == "target" and observed.get("closed") is True:
                     covered[key] = step["id"]
         if digest(op["compensation"]) != original:
@@ -319,6 +325,26 @@ class Coordinator:
     def _requires_sync(step):
         return step["kind"] == "file" or (step["kind"] == "service"
                 and step["action"].get("kind") == "service_policy_link")
+
+    def _retain_effect_identity(self, step, record, *, restore=False):
+        if step['kind'] != 'gateway' or step['action'].get('kind') != 'gateway_create':
+            return False
+        attempts = record['restore_attempts' if restore else 'attempts']
+        if not attempts or not attempts[-1].get('binding'):
+            return False
+        attempt = attempts[-1]
+        before = digest(attempt)
+        observed = record.get('restore_observation' if restore else 'observation') or {}
+        prepared = record['restore' if restore else 'prepared']
+        identity = (self.environment.effect_identity(step, prepared, attempt, observed)
+                    if hasattr(self.environment, 'effect_identity') else observed.get('effect_identity'))
+        if identity is not None:
+            if attempt.get('effect_identity', identity) != identity:
+                raise DeployError('EFFECT_IDENTITY_CONFLICT', 'Original effect identity cannot be rebound')
+            attempt['effect_identity'] = identity
+        elif record['state'] in {'VERIFIED', 'RESTORED'}:
+            attempt['effect_identity_required'] = True
+        return digest(attempt) != before
 
     @classmethod
     def _step_complete(cls, step, observed):
@@ -337,6 +363,7 @@ class Coordinator:
         if previous is not None and "dispatched" in observed:
             previous["dispatched"] = observed["dispatched"]
         record[observation_key] = observed
+        self._retain_effect_identity(step, record, restore=restore)
         if not restore:
             record["effective"] = record["effective"] or observed.get("effective", False)
         self.store.save(op, "OBSERVATION", {"step": step["id"], "restore": restore},
@@ -380,6 +407,7 @@ class Coordinator:
         attempt["command"] = "returned"
         attempt["dispatched"] = observed.get("dispatched", True)
         record[observation_key] = observed
+        self._retain_effect_identity(step, record, restore=restore)
         if not restore:
             record["effective"] = record["effective"] or observed.get("effective", False)
         self.store.save(op, "ACTION_RETURNED", {"step": step["id"], "attempt_id": attempt_id}, recovery=restore)

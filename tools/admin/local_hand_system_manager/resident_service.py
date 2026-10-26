@@ -26,7 +26,7 @@ import uuid
 from local_hand_jobs import budget, cli, forwarded_bounds, maintenance, quota_contract as q
 from local_hand_jobs.contract import DISABLED_JOB_KINDS, JobError, Principal, MAX_WORKSPACE_TEXT_BYTES, canonical_bytes, strict_loads, validate_tool_args
 from local_hand_jobs.task_session import read_descriptor
-from admin.local_hand_quota_observer.protected_inputs import read_protected
+from admin.local_hand_quota_observer.protected_inputs import read_protected, read_fd, file_identity
 from . import provision_task, task_service
 from .prepared_service import FixedLauncher, unit_closed
 
@@ -35,15 +35,77 @@ def load(path):
     return q._load(read_protected(str(path), 2*1024**2), 2*1024**2, 32)
 
 
-def publish(path, value, mode=0o600):
+def publish(path, value, mode=0o600, *, publication=None):
     """Replace only this service's current pointer; attempt records stay intact."""
     path=Path(path)
     directory=os.open(path.parent, os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
     name='.'+path.name+'-'+uuid.uuid4().hex
     try:
         task_service.save(directory, name, value, mode)
+        if publication is not None:
+            # Keep this exact candidate and parent alive across an uncertain
+            # rename/sync reply. Same bytes at another inode are not its proof.
+            publication['directory']=os.dup(directory)
+            publication['file']=os.open(name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK|os.O_CLOEXEC,
+                                        dir_fd=directory)
         os.rename(name, path.name, src_dir_fd=directory, dst_dir_fd=directory)
         os.fsync(directory)
+    finally:os.close(directory)
+
+
+class ReadyPublicationUncertain(JobError):
+    def __init__(self):
+        super().__init__('IO_UNCERTAIN','Original preparation publication needs confirmation')
+
+
+def confirm_publication(path, value, publication, *, expected_bytes=None):
+    """Confirm only the original pinned candidate, including its durability."""
+    directory,fd=publication['directory'],publication['file']
+    expected=q._canonical(value,2*1024**2)+b'\n' if expected_bytes is None else expected_bytes
+    def identity(info):return info.st_dev,info.st_ino
+    parent=os.fstat(directory);original=os.fstat(fd)
+    q.require(identity(Path(path).parent.stat(follow_symlinks=False))==identity(parent),'RESIDENT_PUBLICATION_PARENT')
+    q.require(identity(os.stat(Path(path).name,dir_fd=directory,follow_symlinks=False))==identity(original),
+              'RESIDENT_PUBLICATION_IDENTITY')
+    q.require(stat.S_ISREG(original.st_mode) and original.st_nlink==1 and original.st_size==len(expected),
+              'RESIDENT_PUBLICATION_FILE')
+    os.lseek(fd,0,os.SEEK_SET);raw=bytearray()
+    while len(raw)<=len(expected):
+        part=os.read(fd,min(65536,len(expected)+1-len(raw)))
+        if not part:break
+        raw.extend(part)
+    q.require(bytes(raw)==expected,'RESIDENT_PUBLICATION_BYTES')
+    os.fsync(fd);os.fsync(directory)
+    q.require(identity(Path(path).parent.stat(follow_symlinks=False))==identity(parent)
+              and identity(os.stat(Path(path).name,dir_fd=directory,follow_symlinks=False))==identity(original),
+              'RESIDENT_PUBLICATION_CHANGED')
+
+
+def load_current(path):
+    """Confirm a retained READY pointer before publishing it after restart."""
+    path=Path(path)
+    directory=os.open(path.parent,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
+    try:
+        fd=os.open(path.name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK|os.O_CLOEXEC,dir_fd=directory)
+        try:
+            before=file_identity(os.fstat(fd))
+            record=load(path) # Keep the existing protected ancestor/file checks.
+            if record.get('state')=='READY':
+                try:
+                    # The held object must stay unchanged through protected
+                    # loading. Preserve its original valid JSON bytes, including
+                    # legacy formatting; this is not an old publisher FD claim.
+                    raw=read_fd(fd,2*1024**2)
+                    q.require(file_identity(os.fstat(fd))==before and q._load(raw,2*1024**2,32)==record,
+                              'RESIDENT_CURRENT_CHANGED')
+                    confirm_publication(path,record,dict(directory=directory,file=fd),expected_bytes=raw)
+                    q.require(file_identity(os.fstat(fd))==before,'RESIDENT_CURRENT_CHANGED')
+                except (OSError,ValueError) as error:
+                    uncertain=ReadyPublicationUncertain()
+                    uncertain.add_note('Retained READY confirmation failed: '+type(error).__name__+': '+str(error)[:2048])
+                    raise uncertain from error
+            return record
+        finally:os.close(fd)
     finally:os.close(directory)
 
 
@@ -78,7 +140,7 @@ class ResidentService:
         self.protocol_ready=False
         self.records={}
         for path in sorted(self.root.glob('*/current.json')):
-            record=load(path)
+            record=load_current(path)
             operation=record['operation_id']
             validate_tool_args('lh_job_status',dict(operation_id=operation))
             q.require(path.parent.name==operation, 'RESIDENT_TASK_IDENTITY')
@@ -193,7 +255,25 @@ class ResidentService:
         publish(self.catalog/(record['operation_id']+'.json'),public,0o644)
 
     def _save(self, record):
-        publish(self.root/record['operation_id']/'current.json',record)
+        path=self.root/record['operation_id']/'current.json'
+        publication={} if record['state']=='READY' else None
+        try:
+            try:publish(path,record,publication=publication)
+            except OSError as error:
+                if publication is not None and 'file' in publication:
+                    try:confirm_publication(path,record,publication)
+                    except (OSError,ValueError) as confirmation:
+                        uncertain=ReadyPublicationUncertain()
+                        uncertain.add_note('Original publication failure: '+type(error).__name__+': '+str(error)[:2048])
+                        uncertain.add_note('READY confirmation failed: '+type(confirmation).__name__+': '+str(confirmation)[:2048])
+                        raise uncertain from error
+                    # The original READY pointer did commit. Retain the initial
+                    # failure through the caller, which must not demote it.
+                    self.records[record['operation_id']]=record
+                raise
+        finally:
+            if publication is not None:
+                for fd in publication.values():os.close(fd)
         self.records[record['operation_id']]=record
         self._catalog(record)
 
@@ -568,6 +648,10 @@ class ResidentService:
             except FileExistsError:
                 task_service.save(directory,'preparation-failure-'+uuid.uuid4().hex+'.json',failure)
         finally:os.close(directory)
+        if isinstance(error,ReadyPublicationUncertain):
+            # Keep PREPARING plus its original result for a later confirmation;
+            # writing FAILED here could overwrite an already published READY.
+            raise error
         current=self.records[record['operation_id']]
         # A publication error after the private READY commit must not demote a
         # successful preparation. A later poll/restart repairs its public view.

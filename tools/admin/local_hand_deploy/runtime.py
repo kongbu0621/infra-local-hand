@@ -20,7 +20,7 @@ from local_hand_jobs import cli, maintenance, startup
 
 from . import files
 from .gateway import GatewayAdapter
-from .model import DeployError, PLAN_SCHEMA, canonical, decode, digest, seal_plan
+from .model import DeployError, PLAN_SCHEMA, canonical, decode, digest, operation_id, seal_plan
 from .planner import action_order, validate_profile, validate_schedule
 from .services import SystemdAdapter, tree_snapshot
 from .supervision import SupervisedRunner
@@ -608,7 +608,58 @@ class ConcreteEnvironment(PlanningEnvironment):
                 action[side].update(retained)
             action["retained_files"] = objects
             return action
-        return _clone(step["action"])
+        action = _clone(step["action"])
+        if action.get('kind') == 'gateway_start':
+            reference = self._creation_reference(step, op)
+            if reference is not None:
+                action['creation_ref'] = reference
+        return action
+
+    @staticmethod
+    def _creation_reference(step, op, *, restore=False):
+        steps = [item['step'] for item in op.get('compensation', [])] if restore else op['plan']['steps']
+        creator = None
+        for item in steps:
+            if item['id'] == step['id']:
+                break
+            if (item['kind'] == 'gateway' and item['action'].get('kind') == 'gateway_create'
+                    and item['action']['target'] == step['action']['target']):
+                creator = item['id']
+        return ({'operation_id': op['id'], 'step_id': creator, 'restore': restore} if creator else None)
+
+    def _start_identity(self, step, prepared, op=None):
+        if prepared.get('kind') != 'gateway_start':
+            return None
+        reference = prepared.get('creation_ref')
+        if reference is None:
+            # Older prepared actions did not retain the producer reference.
+            # Recover it from the fixed recorded order, never today's inspect.
+            op = op or self.store.get(operation_id(self.plan['request_id']))
+            restore = any(entry['step']['id'] == step['id'] for entry in op.get('compensation', []))
+            reference = self._creation_reference(step, op, restore=restore)
+        if reference is None:
+            return None
+        origin = op if op is not None and op['id'] == reference['operation_id'] else self.store.get(reference['operation_id'])
+        if reference['restore']:
+            pairs = [(item['step'], item['record']) for item in origin.get('compensation', [])]
+            action_key, attempts_key, observation_key = 'restore', 'restore_attempts', 'restore_observation'
+        else:
+            pairs = list(zip(origin['plan']['steps'], origin['steps']))
+            action_key, attempts_key, observation_key = 'prepared', 'attempts', 'observation'
+        producer = next((record for source, record in pairs if source['id'] == reference['step_id']), None)
+        action = producer.get(action_key) if producer else None
+        if (not action or action.get('kind') != 'gateway_create' or action['target'] != prepared['target']
+                or action.get('compose') != prepared.get('compose') or action['after'] != prepared['after']):
+            raise DeployError('GATEWAY_START_IDENTITY_REQUIRED', 'Start has no matching recorded creation')
+        attempts = producer[attempts_key]
+        return self.gateway.creation_identity(action, self._previous(attempts[-1]) if attempts else None,
+            observation=producer.get(observation_key), lock_fd=self.store.lock_fd)
+
+    def effect_identity(self, step, prepared, attempt, observation):
+        if step['kind'] == 'gateway' and prepared.get('kind') == 'gateway_create':
+            return self.gateway.creation_identity(prepared, self._previous(attempt),
+                observation=observation, lock_fd=self.store.lock_fd)
+        return None
 
     def _retention(self, prepared_files):
         """Declare exact inert staging objects in the shared reload tree.
@@ -654,7 +705,9 @@ class ConcreteEnvironment(PlanningEnvironment):
 
     @staticmethod
     def _previous(attempt):
-        return None if not attempt else attempt.get("binding")
+        if not attempt or not attempt.get('binding'):
+            return None
+        return attempt if ('effect_identity' in attempt or 'effect_identity_required' in attempt) else attempt['binding']
 
     @staticmethod
     def _observation(value, prepared, *, is_file=False):
@@ -662,7 +715,8 @@ class ConcreteEnvironment(PlanningEnvironment):
         if is_file:
             result["effective"] = result["state"] == "target" and prepared["action"] != "noop"
         else:
-            result["effective"] = result["state"] in {"target", "partial"} and prepared.get("before") != value.get("observation")
+            result["effective"] = (value.get('effective') is True or
+                result["state"] in {"target", "partial"} and prepared.get("before") != value.get("observation"))
         return result
 
     def observe(self, step, prepared, attempt=None):
@@ -671,7 +725,8 @@ class ConcreteEnvironment(PlanningEnvironment):
         self._mutating_adapters(readonly=True)
         self._verify_retention(prepared)
         adapter = self.services if step["kind"] == "service" else self.gateway
-        return self._observation(adapter.observe_action(prepared, self._previous(attempt), lock_fd=self.store.lock_fd), prepared)
+        kwargs = {'expected_identity': self._start_identity(step, prepared)} if step['kind'] == 'gateway' else {}
+        return self._observation(adapter.observe_action(prepared, self._previous(attempt), lock_fd=self.store.lock_fd, **kwargs), prepared)
 
     def execute(self, step, prepared, op, attempt_id, persist_intent, previous=None):
         if step["kind"] == "file":
@@ -679,8 +734,9 @@ class ConcreteEnvironment(PlanningEnvironment):
         self._mutating_adapters()
         self._verify_retention(prepared)
         adapter = self.services if step["kind"] == "service" else self.gateway
+        kwargs = {'expected_identity': self._start_identity(step, prepared, op)} if step['kind'] == 'gateway' else {}
         return self._observation(adapter.execute(prepared, attempt_id=attempt_id, lock_fd=self.store.lock_fd,
-            persist_intent=persist_intent, previous=self._previous(previous)), prepared)
+            persist_intent=persist_intent, previous=self._previous(previous), **kwargs), prepared)
 
     def _origins(self, op):
         return [self.store.get(value) for value in op.get("inherited", [])] + [op]
@@ -698,10 +754,14 @@ class ConcreteEnvironment(PlanningEnvironment):
         origins = self._origins(op)
         selected, service_actions, gateway_actions = {}, [], []
         policy_records = {}
+        gateway_creations = []
         for origin in origins:
             for step, record in zip(origin["plan"]["steps"], origin["steps"]):
                 if record["prepared"] is None:
                     continue
+                if step['kind'] == 'gateway' and record['prepared']['kind'] == 'gateway_create' and record['attempts']:
+                    gateway_creations.append((record['prepared'], record['attempts'][-1],
+                                              record.get('observation'), record['state'] == 'VERIFIED'))
                 if (step['kind'] == 'service' and record['prepared'].get('kind') == 'service_policy_link'
                         and (record['effective'] or record['attempts'] or record['state'] == 'VERIFIED')):
                     policy_records[record['prepared']['path']] = (record['prepared'], record['attempts'])
@@ -731,12 +791,26 @@ class ConcreteEnvironment(PlanningEnvironment):
                     service_actions.append(record["restore"])
                     if record['restore'].get('kind') == 'service_policy_link':
                         policy_records[record['restore']['path']] = (record['restore'], record['restore_attempts'])
+                elif step['kind'] == 'gateway':
+                    gateway_actions.append(record['restore'])
+                    if record['restore']['kind'] == 'gateway_create' and record['restore_attempts']:
+                        gateway_creations.append((record['restore'], record['restore_attempts'][-1],
+                                                  record.get('restore_observation'), record['state'] == 'RESTORED'))
         # A retained action describes the desired value, not the identity of
         # whatever currently occupies that path. Follow the latest forward or
         # compensation attempt across inheritance to its original supervisor.
         policy_observations = {path: self.services.observe_action(action,
             self._previous(attempts[-1]) if attempts else None, lock_fd=self.store.lock_fd)
             for path, (action, attempts) in policy_records.items()}
+        creation_observations = []
+        for action, attempt, saved, verified in gateway_creations:
+            previous = self._previous(attempt)
+            identity = self.gateway.creation_identity(action, previous, observation=saved, lock_fd=self.store.lock_fd)
+            if identity is not None or verified:
+                previous = {'binding': attempt['binding'], **({'effect_identity': identity} if identity is not None
+                            else {'effect_identity_required': True})}
+            creation_observations.append(self.gateway.observe_action(action, previous,
+                lock_fd=self.store.lock_fd, require_route=False))
         # All file conflicts are checked before even staging a compensation.
         merged = []
         for chain in selected.values():
@@ -769,7 +843,8 @@ class ConcreteEnvironment(PlanningEnvironment):
                                        ("gateway", gateway_actions, self.gateway if gateway_actions else None)):
             if actions:
                 kwargs = {"retained_tree": current, "retained_target": retained,
-                          "policy_observations": policy_observations} if kind == "service" else {}
+                          "policy_observations": policy_observations} if kind == "service" else {
+                          'creation_observations': creation_observations}
                 for action in adapter.plan_restore(actions, **kwargs):
                     if action["kind"] == "service_daemon_reload":
                         action["retained_files"] = objects
@@ -777,6 +852,12 @@ class ConcreteEnvironment(PlanningEnvironment):
         result.sort(key=lambda item: action_order(item["step"], self.profile))
         for number, item in enumerate(result):
             item["step"]["id"] = f"compensate-{number:03d}"
+        fixed = {**op, 'compensation': result}
+        for item in result:
+            if item['prepared'].get('kind') == 'gateway_start':
+                reference = self._creation_reference(item['step'], fixed, restore=True)
+                if reference is not None:
+                    item['prepared']['creation_ref'] = reference
         return result
 
     def drain(self, op):
@@ -792,18 +873,55 @@ class ConcreteEnvironment(PlanningEnvironment):
         # Original pipes cannot survive a host boot. Close their admission
         # custody only after separately proving all original task parents/jobs
         # empty; do not need a stopped manager socket to recover that fact.
-        from .preparations import observe_reboot_closure, original_preparation
+        from .preparations import observe_reboot_closure, original_preparation, original_not_started
         boot = startup.boot_id()
         old = [duty for duty in active if duty["loaded"]["boot_id"] != boot]
+        observations = {}
         if old:
+            current_components = {duty['loaded']['component'] for duty in active
+                                  if duty['loaded']['boot_id'] == boot}
+            if current_components:
+                # A current-boot no-child receipt may still need its manager's
+                # finish write. Resolve that custody before the independent
+                # old-boot scan; otherwise the scan blocks its own prerequisite.
+                for component in sorted(current_components):
+                    observations[component] = self._probe(component, reconcile=True)
+                marker = self.gate.snapshot()
+                if marker['state'] != 'CLOSED' or marker['owner'] != op['id']:
+                    raise DeployError('MAINTENANCE_CONFLICT', "Drain requires the operation's durable maintenance ownership")
+                active = [duty for duty in marker['responsibilities'].values() if duty['state'] != 'CLOSED']
+                if not active:
+                    return {'quiescent': True, 'accepted_responsibilities': 0, 'observations': observations}
+                old = [duty for duty in active if duty['loaded']['boot_id'] != boot]
             snapshot = None
             checked = set()
             preparation_boots = {}
-            for duty in old:
-                if duty['kind'] == 'prepare':
-                    original_preparation(self.profile, duty)
-                    if duty['state'] != 'ACCEPTED':
-                        preparation_boots.setdefault(duty['loaded']['component'], {})[duty['attempt_id']] = duty['loaded']['boot_id']
+            preparation_unstarted = {}
+            components = {duty['loaded']['component'] for duty in old}
+            configurations = {}
+            # The observer scans the original task tree, including attempts
+            # already closed by an earlier drain. Retain their precise boot
+            # identities across interruption between individual finish writes.
+            for duty in marker['responsibilities'].values():
+                component = duty['loaded']['component']
+                never_started = duty['state'] == 'CLOSED' and duty['proof'] == {'never_dispatched': True}
+                if (duty['kind'] != 'prepare' or component not in components
+                        or duty['loaded']['boot_id'] == boot and not never_started):
+                    continue
+                if component not in configurations:
+                    path = self.profile['guarded_components'][component]['configuration']
+                    configurations[component] = decode(startup.protected_read(path, owner_uid=self.owner))
+                config = configurations[component]
+                # A completed responsibility from an older task root is outside
+                # this observer's scope. Active responsibilities may never use
+                # that exclusion to evade their original identity check.
+                if duty['state'] == 'CLOSED' and duty['binding'].get('private_root') != config.get('private_root'):
+                    continue
+                if original_preparation(self.profile, duty, configuration=config):
+                    if duty['loaded']['boot_id'] != boot:
+                        preparation_boots.setdefault(component, {})[duty['attempt_id']] = duty['loaded']['boot_id']
+                    elif never_started:
+                        preparation_unstarted.setdefault(component, {})[duty['attempt_id']] = original_not_started(self.profile, duty)
             for duty in old:
                 if duty['kind'] == 'prepare':
                     if duty['state'] == 'ACCEPTED':
@@ -820,15 +938,16 @@ class ConcreteEnvironment(PlanningEnvironment):
                 key = (duty["loaded"]["component"], duty["loaded"]["boot_id"])
                 if key not in checked:
                     kwargs = ({'preparation_boots': preparation_boots[key[0]]} if key[0] in preparation_boots else {})
+                    if key[0] in preparation_unstarted:
+                        kwargs['preparation_unstarted'] = preparation_unstarted[key[0]]
                     observe_reboot_closure(self.profile, key[0], expected_boot=key[1], current_boot=boot, **kwargs)
                     checked.add(key)
                 self.gate.finish(duty, {"process_exited": True, "writers_stopped": True})
             active = self.gate.active()
             if not active:
                 return {"quiescent": True, "accepted_responsibilities": 0, "reboot_closed": len(old)}
-        observations = {}
         for component, guard in self.profile["guarded_components"].items():
-            if "prepare" in guard["entrypoints"] or "execute" in guard["entrypoints"]:
+            if component not in observations and ("prepare" in guard["entrypoints"] or "execute" in guard["entrypoints"]):
                 observations[component] = self._probe(component, reconcile=True)
         active = self.gate.active()
         return {"quiescent": not active, "accepted_responsibilities": len(active), "observations": observations}

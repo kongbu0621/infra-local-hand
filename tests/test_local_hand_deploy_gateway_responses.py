@@ -10,10 +10,12 @@ from pathlib import Path
 import signal
 import socketserver
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 from admin.local_hand_deploy.coordinator import Coordinator
+from admin.local_hand_deploy.runtime import ConcreteEnvironment
 from admin.local_hand_deploy.gateway import DockerEngine, DockerHTTPError, GatewayAdapter
 from admin.local_hand_deploy.model import Limits, PLAN_SCHEMA, digest, seal_plan
 from admin.local_hand_deploy.store import Store
@@ -59,8 +61,9 @@ class Handler(BaseHTTPRequestHandler):
         if mode == "reject":
             self.reply(400, {"message": "rejected"})
             return
+        identifier = 'created-' + str(len(self.server.requests.read_text().splitlines()))
         self.server.container = {
-            "Id": "created-container", "Image": body["Image"], "Config": {
+            "Id": identifier, "Image": body["Image"], "Config": {
                 "Labels": body["Labels"], "Env": body["Env"], "Cmd": None,
                 "Entrypoint": None, "User": None},
             "HostConfig": body["HostConfig"], "State": {"Running": False},
@@ -68,7 +71,7 @@ class Handler(BaseHTTPRequestHandler):
         if mode == "effect_then_error":
             self.reply(500, {"message": "failure after creating the object"})
         else:
-            self.reply(201, {"Id": "created-container"})
+            self.reply(201, {"Id": identifier})
 
 
 class GatewayResponseTests(unittest.TestCase):
@@ -140,6 +143,54 @@ class GatewayResponseTests(unittest.TestCase):
         self.assertEqual("DOCKER_HTTP_500", result["supervision"]["result"]["error"])
         self.execute("another", result["attempt"])
         self.assertEqual(1, self.count())
+
+    def independent_create(self, attempt='independent-admin'):
+        self.mode.write_text('success')
+        return self.adapter.engine.request('POST', '/containers/create?name=' + self.adapter.name,
+                                           self.adapter._create_body(self.action['after'], attempt))
+
+    def compensation(self, result):
+        environment = ConcreteEnvironment({'profile': {}}, SimpleNamespace(lock_fd=self.fd), None)
+        environment._gateway = self.adapter
+        environment._runner = self.runner
+        op = {'id': 'creation', 'plan': {'steps': [{'id': 'create', 'kind': 'gateway', 'action': self.action}]},
+              'steps': [{'prepared': self.action, 'effective': True, 'state': 'VERIFIED',
+                         'attempts': [{'binding': result['attempt']['binding']}]}]}
+        return environment.prepare_compensation(op)
+
+    def test_unrequested_matching_container_is_not_an_adoptable_create(self):
+        self.independent_create()
+        observed = self.adapter.observe_action(self.action, lock_fd=self.fd)
+        self.assertEqual('conflict', observed['outcome'])
+        self.assertFalse(ConcreteEnvironment._observation(observed, self.action)['effective'])
+        coordinator, plan, gate = self.coordinator()
+        refused = coordinator.apply(plan)
+        self.assertIsNone(refused['decision'])
+        self.assertEqual([], refused['steps'][0]['attempts'])
+        abandoned = coordinator.rollback(refused['id'])
+        self.assertEqual('ABORTED_NO_CHANGE', abandoned['decision'])
+        self.assertEqual(1, self.count())
+        self.assertEqual('independent-admin', self.adapter.observe()['labels']['local-hand.deploy.attempt'])
+
+    def test_returned_creation_id_cannot_be_replaced_even_with_copied_labels(self):
+        self.mode.write_text('success')
+        original = self.execute('original-create')
+        original_id = original['observation']['id']
+        replacement = self.independent_create('original-create')
+        self.assertNotEqual(original_id, replacement['Id'])
+        observed = self.adapter.observe_action(self.action, original['attempt'], lock_fd=self.fd)
+        self.assertEqual('conflict', observed['outcome'])
+        self.assertTrue(ConcreteEnvironment._observation(observed, self.action)['effective'])
+        with self.assertRaisesRegex(Exception, 'RESTORE_GATEWAY_IDENTITY'):
+            self.compensation(original)
+        self.assertEqual(replacement['Id'], self.adapter.observe()['id'])
+
+    def test_original_created_container_can_be_compensated(self):
+        self.mode.write_text('success')
+        original = self.execute('owned-create')
+        actions = self.compensation(original)
+        self.assertEqual(['gateway_remove'], [item['prepared']['kind'] for item in actions])
+        self.assertEqual(original['observation']['id'], actions[0]['prepared']['before']['id'])
 
     def test_recorded_response_survives_missing_final_supervisor_report(self):
         first = self.execute("reported-error")

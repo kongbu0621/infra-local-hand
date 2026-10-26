@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import stat
 
+from .files import _binding
 from .supervision import AdapterError, boot_id, digest, verify_lock
 from .systemd_bus import SystemdBus
 
@@ -85,12 +86,31 @@ def tree_snapshot(roots, *, max_files=8192, max_bytes=16777216):
 
 def _link_state(path):
     try:
-        info = Path(path).lstat()
+        # Bind the link itself, including its filesystem generation, without
+        # following even a dangling target. Inode numbers alone are reusable.
+        fd = os.open(path, os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC)
     except FileNotFoundError:
         return {"kind": "absent"}
-    if not stat.S_ISLNK(info.st_mode):
-        raise AdapterError("ENABLE_LINK_CONFLICT")
-    return {"kind": "link", "target": os.readlink(path), "dev": info.st_dev, "ino": info.st_ino}
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISLNK(info.st_mode):
+            raise AdapterError("ENABLE_LINK_CONFLICT")
+        return {"kind": "link", "target": os.readlink('', dir_fd=fd), "dev": info.st_dev,
+                "ino": info.st_ino, "binding": _binding(fd)}
+    finally:
+        os.close(fd)
+
+
+def _same_link(actual, expected):
+    """Compare exact objects; old dev/ino-only snapshots cannot prove identity."""
+    if not isinstance(actual, dict) or not isinstance(expected, dict):
+        return False
+    if actual.get('kind') == expected.get('kind') == 'absent':
+        return True
+    return (actual.get('kind') == expected.get('kind') == 'link'
+            and actual.get('target') == expected.get('target')
+            and isinstance(actual.get('binding'), dict) and bool(actual['binding'])
+            and actual['binding'] == expected.get('binding'))
 
 
 def _sync_link_directory(path, expected):
@@ -102,11 +122,11 @@ def _sync_link_directory(path, expected):
     fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         held = os.fstat(fd)
-        if (held.st_dev, held.st_ino) != (parent.st_dev, parent.st_ino) or _link_state(path) != expected:
+        if (held.st_dev, held.st_ino) != (parent.st_dev, parent.st_ino) or not _same_link(_link_state(path), expected):
             raise AdapterError("ENABLE_LINK_CHANGED")
         os.fsync(fd)
         current = path.parent.lstat()
-        if (current.st_dev, current.st_ino) != (held.st_dev, held.st_ino) or _link_state(path) != expected:
+        if (current.st_dev, current.st_ino) != (held.st_dev, held.st_ino) or not _same_link(_link_state(path), expected):
             raise AdapterError("ENABLE_LINK_CHANGED")
         return expected
     finally:
@@ -299,7 +319,7 @@ class SystemdAdapter:
             observed = policy_observations.get(path) or {}
             current = _link_state(path)
             if (observed.get('outcome') not in {'original', 'target'} or observed.get('closed') is not True
-                    or observed.get('observation') != current):
+                    or not _same_link(observed.get('observation'), current)):
                 raise AdapterError('RESTORE_POLICY_LINK_CONFLICT')
             owned_links[path] = current
         targets = {}
@@ -314,7 +334,8 @@ class SystemdAdapter:
         before = self.observe() if observations is None else observations
         restored = self.plan(targets, before, _check_global=False)
         for action in restored:
-            if action['kind'] == 'service_policy_link' and owned_links.get(action['path']) != action['before']:
+            if (action['kind'] == 'service_policy_link'
+                    and not _same_link(owned_links.get(action['path']), action['before'])):
                 raise AdapterError('RESTORE_POLICY_LINK_CONFLICT')
         addressed = {a.get("path") for a in restored if a["kind"] == "service_policy_link"}
         for action in original_actions:
@@ -370,6 +391,9 @@ class SystemdAdapter:
 
     def observe_action(self, action, previous=None, *, lock_fd=None):
         self._validate_action(action)
+        if (previous and action['kind'] == 'service_policy_link'
+                and previous.get('binding', previous).get('action_digest') != digest(action)):
+            raise AdapterError('ATTEMPT_BINDING_CONFLICT')
         supervised = self.runner.observe(previous.get("binding", previous), lock_fd=lock_fd) if previous else None
         local_closed = supervised is None or supervised["closed"]
         events = supervised["events"] if supervised else []
@@ -380,28 +404,33 @@ class SystemdAdapter:
         if kind == "service_policy_link":
             actual = _link_state(action["path"])
             target = actual["kind"] == action["after"]["kind"] and actual.get("target") == action["after"].get("target")
-            original = actual == action["before"]
+            original = _same_link(actual, action["before"])
             result = supervised and supervised.get("result") or {}
             effects = [event.get('link') for event in events if event.get('kind') == 'policy_link_effect']
             returned = result.get('value') if result.get('status') == 'returned' else None
             receipt = returned.get('link') if isinstance(returned, dict) else None
             owned = effects[-1] if effects else receipt
+            effect_recorded = bool(effects or receipt is not None)
             # New attempts persist the exact effect before syncing its parent.
-            # Old successful receipts carry the same identity. An interrupted
-            # legacy attempt (or a lost effect event) cannot claim a link merely
-            # because its target text matches the requested policy.
-            conflict = owned is not None and (actual != owned or receipt is not None and receipt != owned)
-            known_target = target and not conflict and (owned == actual or original)
+            # Successful receipts also carry that identity. Historical receipts
+            # with only dev/ino still prove an effect occurred, but cannot claim
+            # today's object: a filesystem can immediately reuse the same inode.
+            effect_matches = (isinstance(owned, dict) and owned.get('kind') == action['after']['kind']
+                              and owned.get('target') == action['after'].get('target'))
+            conflict = effect_recorded and (not effect_matches or not _same_link(actual, owned)
+                          or receipt is not None and not _same_link(receipt, owned))
+            known_target = target and not conflict and (_same_link(owned, actual) or original)
             outcome = ('conflict' if conflict else 'target' if known_target else 'original' if original
                        else 'unknown' if target and previous else 'conflict')
             # Visibility is not evidence that the parent directory was synced.
             # A returned _perform receipt follows fsync and binds the exact link.
-            synced = bool(known_target and receipt == actual)
+            synced = bool(known_target and _same_link(receipt, actual))
             proof = ('published_identity' if actual['kind'] == 'link' else 'satisfied_observed') if known_target else None
             return {"outcome": outcome, "closed": True,
                     "postcondition": known_target and synced, "synced": synced, "observation": actual, "supervision": supervised,
                     "proof": "original_identity" if original and not conflict else proof,
-                    "dispatched": True if owned is not None else None if previous else False}
+                    "effective": effect_recorded,
+                    "dispatched": True if effect_recorded else None if previous else False}
         with self.bus_factory() as bus:
             sender = next((event.get("sender") for event in reversed(events) if event.get("kind") == "bus_binding"), None)
             dispatch_recorded = any(event.get("kind") in ("dispatching", "reload_dispatching") for event in events)
@@ -479,7 +508,7 @@ class SystemdAdapter:
         kind = action["kind"]
         if kind == "service_policy_link":
             path = Path(action["path"])
-            if _link_state(path) != action["before"]:
+            if not _same_link(_link_state(path), action["before"]):
                 raise AdapterError("ENABLE_LINK_CHANGED")
             parent = path.parent.lstat()
             if not stat.S_ISDIR(parent.st_mode) or parent.st_uid != os.geteuid() or parent.st_mode & 0o022:

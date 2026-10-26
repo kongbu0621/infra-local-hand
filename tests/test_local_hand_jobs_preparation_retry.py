@@ -1,15 +1,18 @@
 """Preparation-local failures keep durable attempt identity and remain retryable."""
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
 import threading
+import time
 import unittest
 import uuid
 from unittest.mock import Mock, patch
 
 from admin.local_hand_system_manager import resident_service as admin
 import test_local_hand_maintenance_gate as fixtures
+import test_local_hand_resident as resident_fixtures
 
 
 class PreparationRetryTests(unittest.TestCase):
@@ -272,6 +275,201 @@ class PreparationRetryTests(unittest.TestCase):
             for child in children:
                 if child.poll() is None:child.kill()
                 child.wait(timeout=3)
+
+    def test_worker_ready_reply_failure_preserves_result_and_closes_original_duty(self):
+        case,service=self.service();request=self.request();sync=os.fsync;injected=[]
+        current=service.root/request['operation_id']/'current.json'
+        process=Mock(returncode=0)
+        process.__enter__=Mock(return_value=process);process.__exit__=Mock(return_value=False)
+        def prepared(timeout):
+            record=service.records[request['operation_id']];attempt=Path(record['attempt'])
+            launch=dict(request=dict(operation_id=request['operation_id'],kind='host.inspect',inputs={},
+                                     request_digest='a'*64,expires_at=int(time.time())+300),
+                        principal_id='owner',policy_path='/synthetic-policy',
+                        controller_envelope=dict(controller=dict(unit='controller.service')))
+            (attempt/'result.json').write_text(json.dumps(dict(launch=launch,reservation=str(attempt))))
+            return b'',b''
+        process.communicate.side_effect=prepared
+        def lost_reply(fd):
+            sync(fd);info=os.fstat(fd)
+            if current.exists():
+                parent=current.parent.stat()
+                if (not injected and (info.st_dev,info.st_ino)==(parent.st_dev,parent.st_ino)
+                        and json.loads(current.read_text())['state']=='READY'):
+                    injected.append(True);raise OSError('worker READY sync reply lost')
+        with patch.object(admin.os,'fsync',side_effect=lost_reply), \
+                patch.object(admin.provision_task,'task_input',return_value={}), \
+                patch.object(admin.subprocess,'Popen',return_value=process), \
+                patch.object(admin.task_service,'TaskService'):
+            service.call(request);service.worker.join(3)
+            self.assertFalse(service.worker.is_alive())
+            result=service.call(request)
+        self.assertTrue(injected);self.assertEqual('READY',result['state'])
+        record=service.records[request['operation_id']]
+        self.assertTrue((Path(record['attempt'])/'preparation-failure.json').exists())
+        duty=case.gate.snapshot()['responsibilities'][record['maintenance_admission']['id']]
+        self.assertEqual('CLOSED',duty['state'])
+        self.assertEqual(dict(process_exited=True,writers_stopped=True),duty['proof'])
+
+
+class ReadyPublicationTests(unittest.TestCase):
+    def preparation(self):
+        case=resident_fixtures.PreparationTests('runTest');case.setUp();self.addCleanup(case.doCleanups)
+        record=case.ready_record();record['state']='PREPARING'
+        attempt=Path(record['attempt']);attempt.mkdir()
+        record.update(serial=1,prepare_unit='original.service')
+        launch=dict(request=record.pop('request'),principal_id='owner',policy_path=record['policy_path'],
+                    controller_envelope=dict(controller=dict(unit='controller.service')))
+        (attempt/'result.json').write_text(json.dumps(dict(launch=launch,reservation=str(attempt))))
+        case.service._save(record)
+        return case,record,launch
+
+    def test_ready_rename_or_sync_reply_failure_preserves_original_result(self):
+        for boundary in ('rename','sync'):
+            with self.subTest(boundary=boundary):
+                case,record,launch=self.preparation();attempt=Path(record['attempt'])
+                current=attempt.parent/'current.json';original_result=(attempt/'result.json').read_bytes()
+                directory=attempt.parent.stat();injected=[];sync=os.fsync;rename=os.rename
+                def lose_sync_reply(fd):
+                    sync(fd);info=os.fstat(fd)
+                    if (boundary=='sync' and not injected
+                            and (info.st_dev,info.st_ino)==(directory.st_dev,directory.st_ino)
+                            and json.loads(current.read_text())['state']=='READY'):
+                        injected.append(True);raise OSError('lost READY directory-sync reply')
+                def lose_rename_reply(*args,**kwargs):
+                    rename(*args,**kwargs)
+                    if boundary=='rename' and not injected and json.loads(current.read_text())['state']=='READY':
+                        injected.append(True);raise OSError('lost READY rename reply')
+                with patch.object(admin.os,'fsync',side_effect=lose_sync_reply), \
+                        patch.object(admin.os,'rename',side_effect=lose_rename_reply), \
+                        patch.object(case.service,'_preparation_active',return_value=False), \
+                        patch.object(admin.task_service,'TaskService'), \
+                        patch.object(case.service,'_prepare_worker') as worker:
+                    response=case.service.call(case.args)
+                    retried=case.service.call(dict(case.args,retry_failed=True))
+                    if case.service.worker is not None:case.service.worker.join(3)
+                self.assertTrue(injected)
+                self.assertEqual('READY',response['state']);self.assertEqual(response,retried)
+                self.assertEqual(launch['request'],response['request'])
+                self.assertEqual('READY',json.loads(current.read_text())['state'])
+                self.assertEqual(original_result,(attempt/'result.json').read_bytes())
+                self.assertTrue((attempt/'preparation-failure.json').exists());worker.assert_not_called()
+
+    def test_persistent_ready_sync_uncertainty_is_retained_then_same_task_recovers(self):
+        from local_hand_jobs.contract import JobError
+        case,record,launch=self.preparation();attempt=Path(record['attempt'])
+        current=attempt.parent/'current.json';directory=attempt.parent.stat();sync=os.fsync
+        def unavailable(fd):
+            info=os.fstat(fd)
+            if ((info.st_dev,info.st_ino)==(directory.st_dev,directory.st_ino)
+                    and json.loads(current.read_text())['state']=='READY'):
+                raise OSError('READY directory sync remains unavailable')
+            sync(fd)
+        with patch.object(case.service,'_preparation_active',return_value=False), \
+                patch.object(admin.task_service,'TaskService'), \
+                patch.object(case.service,'_prepare_worker') as worker:
+            with patch.object(admin.os,'fsync',side_effect=unavailable):
+                with self.assertRaises(JobError) as unknown:case.service.call(case.args)
+                self.assertEqual('IO_UNCERTAIN',unknown.exception.code)
+            self.assertEqual('READY',json.loads(current.read_text())['state'])
+            self.assertEqual('PREPARING',case.service.records[record['operation_id']]['state'])
+            failure=json.loads((attempt/'preparation-failure.json').read_text())
+            self.assertIn('READY directory sync remains unavailable',' '.join(failure['notes']))
+            response=case.service.call(dict(case.args,retry_failed=True))
+            self.assertEqual('READY',response['state']);self.assertEqual(launch['request'],response['request'])
+            self.assertEqual(record['attempt'],case.service.records[record['operation_id']]['attempt'])
+            worker.assert_not_called()
+
+    def test_same_bytes_from_another_inode_cannot_confirm_this_ready_publication(self):
+        from local_hand_jobs.contract import JobError
+        case,record,_=self.preparation();attempt=Path(record['attempt'])
+        current=attempt.parent/'current.json';directory=attempt.parent.stat();sync=os.fsync;changed=[]
+        def replace_after_sync(fd):
+            sync(fd);info=os.fstat(fd)
+            if (not changed and (info.st_dev,info.st_ino)==(directory.st_dev,directory.st_ino)
+                    and json.loads(current.read_text())['state']=='READY'):
+                changed.append(current.stat().st_ino)
+                replacement=current.with_name('independent-current.json')
+                replacement.write_bytes(current.read_bytes());replacement.chmod(0o600)
+                os.replace(replacement,current)
+                raise OSError('READY publication name changed before confirmation')
+        with patch.object(admin.os,'fsync',side_effect=replace_after_sync), \
+                patch.object(case.service,'_preparation_active',return_value=False), \
+                patch.object(admin.task_service,'TaskService'), \
+                patch.object(case.service,'_prepare_worker') as worker:
+            with self.assertRaises(JobError) as unknown:case.service.call(case.args)
+        self.assertEqual('IO_UNCERTAIN',unknown.exception.code);self.assertTrue(changed)
+        self.assertNotEqual(changed[0],current.stat().st_ino)
+        self.assertEqual('READY',json.loads(current.read_text())['state'])
+        self.assertEqual('PREPARING',case.service.records[record['operation_id']]['state'])
+        worker.assert_not_called()
+
+    def test_restart_reconfirms_visible_ready_before_catalog_and_preserves_original_bytes(self):
+        from local_hand_jobs.contract import JobError
+        case,record,launch=self.preparation();attempt=Path(record['attempt'])
+        current=attempt.parent/'current.json';directory=attempt.parent.stat();sync=os.fsync
+        catalog=Path(case.config['catalog'])/(record['operation_id']+'.json')
+        original_catalog=catalog.read_bytes();blocked=[]
+        def unavailable(fd):
+            info=os.fstat(fd)
+            if ((info.st_dev,info.st_ino)==(directory.st_dev,directory.st_ino)
+                    and json.loads(current.read_text())['state']=='READY'):
+                blocked.append(True);raise OSError('READY parent sync remains unavailable across restart')
+            sync(fd)
+        with patch.object(admin.os,'fsync',side_effect=unavailable), \
+                patch.object(case.service,'_preparation_active',return_value=False), \
+                patch.object(admin.task_service,'TaskService'):
+            with self.assertRaises(JobError):case.service.call(case.args)
+            self.assertEqual('PREPARING',case.service.records[record['operation_id']]['state'])
+            # Legacy valid JSON formatting is retained byte for byte, rather
+            # than being rewritten into the latest publisher's representation.
+            current.write_text(json.dumps(json.loads(current.read_text()),indent=2)+'\n')
+            original_current=current.read_bytes()
+            failure=(attempt/'preparation-failure.json').read_bytes()
+            count=len(blocked)
+            with self.assertRaises(JobError) as pending:admin.ResidentService(case.config)
+            self.assertEqual('IO_UNCERTAIN',pending.exception.code)
+            self.assertIsInstance(pending.exception.__cause__,OSError)
+            self.assertGreater(len(blocked),count)
+        self.assertEqual(original_catalog,catalog.read_bytes())
+        synchronized=[];publish=admin.publish;current_info=current.stat()
+        def observed_sync(fd):
+            info=os.fstat(fd);sync(fd)
+            for name,expected in (('file',current_info),('parent',directory)):
+                if (info.st_dev,info.st_ino)==(expected.st_dev,expected.st_ino):synchronized.append(name)
+        def publish_after_confirmation(path,*args,**kwargs):
+            if Path(path)==catalog:self.assertEqual(['file','parent'],synchronized)
+            return publish(path,*args,**kwargs)
+        with patch.object(admin.os,'fsync',side_effect=observed_sync), \
+                patch.object(admin,'publish',side_effect=publish_after_confirmation), \
+                patch.object(admin.ResidentService,'_prepare_worker') as worker:
+            restarted=admin.ResidentService(case.config)
+            response=restarted.call(case.args)
+        self.assertEqual('READY',response['state']);self.assertEqual(launch['request'],response['request'])
+        self.assertEqual(record['attempt'],restarted.records[record['operation_id']]['attempt'])
+        self.assertEqual(original_current,current.read_bytes())
+        self.assertEqual(failure,(attempt/'preparation-failure.json').read_bytes());worker.assert_not_called()
+
+    def test_restart_rejects_current_replacement_during_protected_load(self):
+        from local_hand_jobs.contract import JobError
+        case,record,_=self.preparation();attempt=Path(record['attempt'])
+        with patch.object(case.service,'_preparation_active',return_value=False), \
+                patch.object(admin.task_service,'TaskService'):
+            self.assertEqual('READY',case.service.call(case.args)['state'])
+        current=attempt.parent/'current.json';raw=current.read_bytes();load=admin.load
+        catalog=Path(case.config['catalog'])/(record['operation_id']+'.json');original=catalog.read_bytes()
+        def replaced(path):
+            result=load(path)
+            if Path(path)==current:
+                other=current.with_name('independent-current.json')
+                other.write_bytes(raw);other.chmod(0o600);os.replace(other,current)
+            return result
+        with patch.object(admin,'load',side_effect=replaced), \
+                patch.object(admin.ResidentService,'_prepare_worker') as worker:
+            with self.assertRaises(JobError) as pending:admin.ResidentService(case.config)
+        self.assertEqual('IO_UNCERTAIN',pending.exception.code)
+        self.assertEqual(original,catalog.read_bytes());self.assertEqual(raw,current.read_bytes())
+        worker.assert_not_called()
 
 
 if __name__=='__main__':unittest.main()
