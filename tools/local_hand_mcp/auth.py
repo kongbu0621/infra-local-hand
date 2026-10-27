@@ -193,8 +193,13 @@ class AuthConfig:
         return cls(**values)
 
     @classmethod
-    def from_file(cls, path: str) -> "AuthConfig":
-        """Read a private regular configuration without following symlinks."""
+    def from_file(cls, path: str, *, allow_administrator_owned=False) -> "AuthConfig":
+        """Read private configuration, or an administrator-owned guarded input.
+
+        The startup guard binds administrator-owned inputs to the complete
+        selected configuration. Such files may be readable by the service,
+        but must remain unwritable by its user and by other ordinary users.
+        """
         import os
         import stat
         from pathlib import Path
@@ -234,8 +239,11 @@ class AuthConfig:
                 raise
             with source:
                 before = os.fstat(source.fileno())
-                if (not stat.S_ISREG(before.st_mode) or before.st_uid != os.geteuid()
-                        or before.st_mode & 0o077 or before.st_nlink != 1):
+                private = before.st_uid == os.geteuid() and not before.st_mode & 0o077
+                administrator = (allow_administrator_owned is True and before.st_uid == 0
+                                 and not before.st_mode & 0o022)
+                if (not stat.S_ISREG(before.st_mode) or not (private or administrator)
+                        or before.st_nlink != 1):
                     raise ValueError("Authorization configuration is not private and owned")
                 if ancestors() != admitted_ancestors:
                     raise ValueError("Authorization configuration ancestors changed while opening")

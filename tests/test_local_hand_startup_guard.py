@@ -355,7 +355,7 @@ class MCPMainTests(unittest.TestCase):
                 self.assertNotIn('port',kwargs)
             with self.subTest(denied=denied), patch.object(server,'_require_optional'), \
                     patch.object(startup_guard,'guard',guard), \
-                    patch('local_hand_mcp.auth.AuthConfig.from_file',return_value=Mock()), \
+                    patch('local_hand_mcp.auth.AuthConfig.from_file',return_value=Mock()) as auth, \
                     patch('local_hand_mcp.auth.JWTVerifier',return_value=Mock()), \
                     patch('local_hand_jobs.cli.create_retained_broker',return_value=broker) as create, \
                     patch('local_hand_jobs.deployment.release_identity',return_value={}), \
@@ -366,11 +366,22 @@ class MCPMainTests(unittest.TestCase):
                 result=server.main(['--config','/synthetic','--read-only','--auth-config','/synthetic/auth',
                                     '--port','8765','--startup-config','/synthetic/startup'])
                 self.assertEqual(2 if denied else 0,result)
+                auth.assert_called_once_with('/synthetic/auth', allow_administrator_owned=True)
                 self.assertEqual({'/original':'selected-declaration'},create.call_args.kwargs['filesystem_bindings'])
                 self.assertEqual(['guard-held'] if denied else
                     ['guard-held','ack','guard-released','secondary-open','http-start'],events)
                 self.assertEqual(-1,listener.fileno())
                 close.assert_called_once()
+
+    def test_unguarded_entry_keeps_private_auth_file_contract(self):
+        from local_hand_mcp import server
+        @contextmanager
+        def unguarded(args): yield None
+        with patch.object(server, '_require_optional'), patch.object(startup_guard, 'guard', unguarded), \
+                patch('local_hand_mcp.auth.AuthConfig.from_file', side_effect=ValueError('fixture')) as auth:
+            self.assertEqual(2, server.main(['--config', '/synthetic', '--read-only',
+                '--auth-config', '/synthetic/auth', '--port', '8765']))
+            auth.assert_called_once_with('/synthetic/auth')
 
 
 if __name__=='__main__':unittest.main()

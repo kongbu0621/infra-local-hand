@@ -532,6 +532,35 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(ValueError):
                 AuthConfig.from_file(str(link))
 
+    def test_guarded_administrator_auth_input_preserves_owner_and_write_checks(self):
+        from types import SimpleNamespace
+        original = os.fstat
+        def owned(uid):
+            def inspect(fd):
+                value = original(fd)
+                fields = {name: getattr(value, name) for name in dir(value) if name.startswith('st_')}
+                fields['st_uid'] = uid
+                return SimpleNamespace(**fields)
+            return inspect
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'auth.json'
+            path.write_text(json.dumps(self.issuer.configuration)); path.chmod(0o644)
+            with patch('os.fstat', side_effect=owned(0)):
+                with self.assertRaises(ValueError):
+                    AuthConfig.from_file(str(path))
+                self.assertEqual(self.issuer.config,
+                    AuthConfig.from_file(str(path), allow_administrator_owned=True))
+                for mode in (0o664, 0o646, 0o666):
+                    path.chmod(mode)
+                    with self.subTest(mode=mode), self.assertRaises(ValueError):
+                        AuthConfig.from_file(str(path), allow_administrator_owned=True)
+            path.chmod(0o644)
+            with patch('os.fstat', side_effect=owned(os.geteuid() + 1)), self.assertRaises(ValueError):
+                AuthConfig.from_file(str(path), allow_administrator_owned=True)
+            link = Path(folder) / 'alias'; link.symlink_to(path)
+            with self.assertRaises(ValueError):
+                AuthConfig.from_file(str(link), allow_administrator_owned=True)
+
     def test_auth_config_cannot_be_rebound_through_changed_ancestors(self):
         for replacement in ("symlink", "directory"):
             with self.subTest(replacement=replacement), tempfile.TemporaryDirectory() as folder:

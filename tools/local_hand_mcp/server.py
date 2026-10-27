@@ -522,7 +522,8 @@ def main(argv=None) -> int:
         from local_hand_mcp.startup_guard import guard
         with ExitStack() as startup_stack:
             guarded = startup_stack.enter_context(guard(args))
-            auth = AuthConfig.from_file(args.auth_config)
+            auth = AuthConfig.from_file(args.auth_config,
+                **({"allow_administrator_owned": True} if guarded is not None else {}))
             # Configuration reads and bind share the privileged startup lock.
             # Only the prebound loopback socket is handed to the HTTP server.
             if guarded is not None and (args.read_only or args.prepared_task or args.resident):
