@@ -42,7 +42,7 @@ class PlanningEnvironment:
         from .preparations import inventory
         return inventory(self.profile, candidates=candidates)
 
-    def _probe(self, component, *, reconcile=False, retention=None):
+    def _probe(self, component, *, reconcile=False, retention=None, deadline=None):
         spec = self.profile["probes"][component]
         if spec["kind"] == "gateway":
             return self._gateway_probe(component)
@@ -62,6 +62,10 @@ class PlanningEnvironment:
         if not stat.S_ISSOCK(info.st_mode) or info.st_uid != spec.get("peer_uid", 0):
             raise DeployError("UNTRUSTED_PROBE", "Status socket is not its fixed local peer")
         end = time.monotonic() + min(self.profile.get("timeout_seconds", 30), 10)
+        if deadline is not None:
+            end = min(end, deadline)
+        if end <= time.monotonic():
+            raise TimeoutError("Local readiness observation deadline reached")
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
             connection.settimeout(max(0.01, end - time.monotonic()))
             connection.connect(str(path))
@@ -88,13 +92,15 @@ class PlanningEnvironment:
         direct = spec["kind"] == "mcp" and result.get("component") == component
         loaded = result if direct else result.get("loaded")
         if ((not direct and result.get("maintenance_supported") is not True) or not isinstance(loaded, dict)
-                or loaded.get("pid") != pid or loaded.get("protocol_ready") is not True
+                or loaded.get("pid") != pid or type(loaded.get("protocol_ready")) is not bool
                 or loaded.get("boot_id") != startup.boot_id()):
             raise DeployError("UNGUARDED_ENTRY", "Actual listener did not prove its loaded guarded configuration")
         # Bind the successful socket response to this live process instance.
         raw = Path(f"/proc/{pid}/stat").read_text()
         if str(loaded.get("start_ticks")) != raw[raw.rindex(")") + 2:].split()[19]:
             raise DeployError("PROBE_INSTANCE_CHANGED", "Status process instance changed")
+        if not loaded["protocol_ready"]:
+            raise DeployError("PROBE_NOT_READY", "Guarded listener is still initializing its protocol")
         value = {"maintenance_supported": True, "loaded": loaded} if direct else result
         if retention is not None:
             value["readback"] = readback
@@ -183,7 +189,22 @@ class PlanningEnvironment:
 
     def _loaded(self, unit):
         component = self.profile["systemd"]["units"][unit]["component"]
-        value = self._probe(component)["loaded"]
+        # Type=exec becomes active before the application binds its socket.
+        # MCP can also bind maintenance before its authenticated HTTP lifespan
+        # is ready. All retries keep the original peer/instance checks and one
+        # deadline; they never repeat a service or reconciliation action.
+        end = time.monotonic() + min(self.profile.get("timeout_seconds", 30), 30)
+        while True:
+            try:
+                value = self._probe(component, deadline=end)["loaded"]
+                break
+            except (FileNotFoundError, ConnectionRefusedError, DeployError) as error:
+                if isinstance(error, DeployError) and error.code != "PROBE_NOT_READY":
+                    raise
+                remaining = end - time.monotonic()
+                if remaining <= 0:
+                    raise
+                time.sleep(min(0.1, remaining))
         return {**value, "config_digest": value["configuration_digest"]}
 
     @property
