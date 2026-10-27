@@ -112,6 +112,37 @@ class UnitObservationTests(unittest.TestCase):
         self.assertEqual("disabled", loaded.unit("fixture.service")["UnitFileState"])
 
 
+class LazyDependencySnapshotTests(unittest.TestCase):
+    def test_managed_reverse_edges_are_present_regardless_of_iteration_order(self):
+        manager, consumer = 'manager.service', 'consumer.service'
+        class Bus:
+            def __init__(self): self.loaded = set(); self.calls = []
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def jobs(self): return []
+            def unit(self, name):
+                self.loaded.add(name); self.calls.append(name)
+                value = {'LoadState': 'loaded', 'ActiveState': 'inactive', 'UnitFileState': 'disabled',
+                         'Type': 'exec', 'KillMode': 'control-group', 'Restart': 'no', 'Job': [0, '/']}
+                if name == consumer:
+                    value.update(After=[manager], Requires=[manager])
+                elif consumer in self.loaded:
+                    value.update(Before=[consumer], RequiredBy=[consumer])
+                return value
+        observations = []
+        for order in ((manager, consumer), (consumer, manager)):
+            bus = Bus()
+            profile = {'units': {unit: {'read_only_dependencies': [manager] if unit == consumer else []}
+                                 for unit in order}}
+            adapter = SystemdAdapter(profile, None, bus_factory=lambda: bus)
+            first = adapter.observe()
+            self.assertEqual([consumer], first['units'][manager]['stop_dependents'])
+            self.assertEqual(list(order), bus.calls[:2])
+            self.assertEqual(first, adapter.observe())
+            observations.append(first)
+        self.assertEqual(observations[0], observations[1])
+
+
 class ReadOnlyBindingTests(unittest.TestCase):
     def setUp(self):
         self.unit = "fixture.service"

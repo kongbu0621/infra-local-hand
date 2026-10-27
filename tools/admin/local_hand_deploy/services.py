@@ -250,6 +250,11 @@ class SystemdAdapter:
 
     def observe(self):
         with self.bus_factory() as bus:
+            # Loading a later managed unit can add reverse Before/RequiredBy
+            # edges to an earlier one. Materialize the whole fixed set before
+            # taking snapshots, so iteration order cannot change the plan.
+            for unit in self.units:
+                bus.unit(unit)
             snapshots = {unit: self._snapshot(bus, unit) for unit in self.units}
             jobs = [row for row in bus.jobs() if row[1] in self.units]
         return {"units": snapshots, "jobs": jobs, "boot": boot_id()}
