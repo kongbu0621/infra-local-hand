@@ -20,6 +20,30 @@ from admin.local_hand_deploy.systemd_bus import SystemdBus
 
 
 class UnitObservationTests(unittest.TestCase):
+    def test_dependency_enumeration_order_does_not_change_definition_identity(self):
+        from admin.local_hand_deploy.services import definition_digest, DEPENDENCY_FIELDS
+        value = {key: ["b.service", "a.service"] for key in DEPENDENCY_FIELDS}
+        original = copy.deepcopy(value)
+        expected = definition_digest(value)
+        for key in DEPENDENCY_FIELDS:
+            changed = copy.deepcopy(value); changed[key].reverse()
+            self.assertEqual(expected, definition_digest(changed), key)
+            changed[key].append("other.service")
+            self.assertNotEqual(expected, definition_digest(changed), key)
+        self.assertEqual(original, value)
+
+    def test_command_argument_hook_and_dropin_order_remain_significant(self):
+        from admin.local_hand_deploy.services import definition_digest
+        value = {"ExecStart": [["/program", ["/program", "one", "two"], False]],
+                 "ExecStartPre": [["/first", ["/first"], False], ["/second", ["/second"], False]],
+                 "DropInPaths": ["/10-first.conf", "/20-second.conf"]}
+        expected = definition_digest(value)
+        for field in ("ExecStart", "ExecStartPre", "DropInPaths"):
+            changed = copy.deepcopy(value)
+            if field == "ExecStart": changed[field][0][1][1:] = ["two", "one"]
+            else: changed[field].reverse()
+            self.assertNotEqual(expected, definition_digest(changed), field)
+
     class Bus(SystemdBus):
         def __init__(self, properties, file_state_error=None):
             self.observed = properties

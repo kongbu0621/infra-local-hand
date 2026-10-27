@@ -106,6 +106,24 @@ class BootstrapTests(unittest.TestCase):
     def plan(self): return bootstrap.build_bootstrap_plan(self.manifest, self.observer)
     def adopt(self, plan): return bootstrap.adopt_bootstrap(self.store, plan, observer=self.observer)
 
+    def test_dependency_order_changes_between_plan_and_import_keep_same_identity(self):
+        self.profile['systemd']['units']['guarded.service']['read_only_dependencies'] = ['a.target', 'b.target']
+        self.bus.units['guarded.service'].update(Requires=['a.target', 'b.target'], After=['a.target', 'b.target'])
+        original = self.bus.unit
+        calls = []
+        def reordered(name):
+            value = copy.deepcopy(original(name))
+            if name == 'guarded.service':
+                calls.append(name)
+                if len(calls) % 2:
+                    value['Requires'].reverse(); value['After'].reverse()
+            return value
+        self.bus.unit = reordered
+        result = self.adopt(self.plan())
+        self.assertEqual('COMMITTED', result['decision'])
+        self.assertTrue(result['released'])
+        self.assertGreater(len(calls), 3)
+
     def test_result_readback_failure_retains_partial_import_and_resumes_same_files(self):
         plan = self.plan()
         original = self.observer.retention

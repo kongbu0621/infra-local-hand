@@ -24,6 +24,7 @@ POLICIES = {"enabled", "enabled-runtime", "disabled", "static", "absent"}
 STOPPED = {"inactive", "failed"}
 FORBIDDEN_PROPAGATION = ("PartOf", "ConsistsOf", "BoundBy", "PropagatesStopTo", "StopPropagatedFrom", "OnFailure", "OnSuccess", "TriggeredBy", "Triggers", "Upholds", "UpheldBy")
 HOOKS = ("ExecStartPre", "ExecStartPost", "ExecStop", "ExecStopPost", "ExecReload", "ExecCondition")
+DEPENDENCY_FIELDS = (*FORBIDDEN_PROPAGATION, "BindsTo", "Requires", "Wants", "Requisite", "Conflicts", "Before", "After")
 DEFINITION_FIELDS = ("Type", "Restart", "KillMode", "ExecStart", *HOOKS, *FORBIDDEN_PROPAGATION, "BindsTo",
                      "Requires", "Wants", "Requisite", "Conflicts", "Before", "After", "FragmentPath", "DropInPaths")
 
@@ -34,6 +35,10 @@ def _hex(value):
 
 def definition_digest(properties):
     configuration = {key: properties.get(key, []) for key in DEFINITION_FIELDS}
+    # systemd dependency properties are sets. Their D-Bus enumeration order
+    # may change on every read without changing the unit's definition.
+    for key in DEPENDENCY_FIELDS:
+        configuration[key] = sorted(configuration[key])
     # Exec* replies also contain last execution timestamps, PID and exit status.
     # Those are instance observations, never part of the loaded definition hash.
     for key in ("ExecStart", *HOOKS):
