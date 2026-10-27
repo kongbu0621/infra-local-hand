@@ -227,7 +227,8 @@ class Coordinator:
         isolation = [(s, r) for s, r in zip(op["plan"]["steps"], op["steps"])
                      if s["action"].get("phase") == "isolate"]
         if isolation or op["plan"]["profile"].get("security_repair"):
-            self._block(op)
+            if not op["startup"]["blocked"]:
+                self._block(op)
             for step, record in isolation:
                 if not self._step(op, step, record):
                     return op
@@ -240,7 +241,11 @@ class Coordinator:
             self.store.save(op, "RETAINED_BINDINGS")
         op["phase"] = "QUIESCED"
         self.store.save(op, "QUIESCED")
-        self._block(op)
+        # The first block precedes every forward effect. Repeating it on resume
+        # discards claims from services already started by this operation; their
+        # completed start actions are deliberately not dispatched a second time.
+        if not op["startup"]["blocked"]:
+            self._block(op)
         op["phase"] = "APPLYING"
         self.store.save(op, "APPLYING")
         for step, record in zip(op["plan"]["steps"], op["steps"]):
@@ -442,11 +447,11 @@ class Coordinator:
         active = self.gate.active()
         if active or drain.get("quiescent") is not True:
             return self._wait(op, "DRAIN", {"accepted_responsibilities": len(active), "observation": drain})
-        self._block(op)
         # Compensation is a fixed dependency order, not naive reverse order:
         # stop candidate -> restore files -> reload -> restore original runtime.
         # Once prepared, this exact list survives a second recovery interruption.
         if "compensation" not in op:
+            self._block(op)
             self.store.save(op, "RESTORE_PREPARATION_INTENT", recovery=True)
             actions = self.environment.prepare_compensation(op)
             if len(actions) > self.store.limits.max_steps:

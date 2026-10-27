@@ -158,6 +158,41 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual([("config", "new")], self.effects.changes)
         self.assertEqual(1, len(recovered["errors"]["primary"]))
 
+    def test_forward_resume_preserves_started_candidate_after_response_loss(self):
+        claims = {}
+        execute = self.effects.execute
+        def block(op):
+            claims.clear()
+            return {"blocked": True}
+        def start(*args, **kwargs):
+            claims['manager'] = {'pid': 42, 'boot_id': 'same-boot'}
+            return execute(*args, **kwargs)
+        self.effects.fail_after_effect = True
+        with mock.patch.object(self.effects, 'block_startup', side_effect=block) as blocked, \
+                mock.patch.object(self.effects, 'execute', side_effect=start), \
+                mock.patch.object(self.effects, 'check_local', side_effect=lambda *a, **k: {'passed': bool(claims)}):
+            first = self.coordinator.apply(plan())
+            self.assertIsNone(first['decision'])
+            expected = dict(claims)
+            result = self.coordinator.resume(first['id'])
+        self.assertEqual('COMMITTED', result['decision'])
+        self.assertEqual(expected, claims)
+        self.assertEqual(1, blocked.call_count)
+        self.assertEqual([('config', 'new')], self.effects.changes)
+
+    def test_rollback_resume_preserves_started_original_after_check_failure(self):
+        self.effects.check_ok = False
+        first = self.coordinator.apply(plan())
+        with mock.patch.object(self.effects, 'block_startup', wraps=self.effects.block_startup) as blocked:
+            restored = self.coordinator.rollback(first['id'])
+            self.assertIsNone(restored['decision'])
+            self.effects.check_ok = True
+            result = self.coordinator.resume(restored['id'])
+        self.assertEqual('ROLLED_BACK', result['decision'])
+        self.assertTrue(result['released'])
+        self.assertEqual(1, blocked.call_count)
+        self.assertEqual([('config', 'new'), ('config', 'old')], self.effects.changes)
+
     def test_no_effect_rollback_does_not_wait_for_long_task(self):
         self.effects.drain_ready = False
         paused = self.coordinator.apply(plan())
