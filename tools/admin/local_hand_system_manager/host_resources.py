@@ -7,6 +7,7 @@ changes a running slice's limits, starts a business service, or reloads a manage
 The deployment profile must exclude competing writers to these fixed resources.
 """
 import argparse
+import configparser
 import fcntl
 import json
 import os
@@ -86,15 +87,59 @@ def service_definition(resident, *, python, package_root, admin_tools, configura
             "[Install]\nWantedBy=multi-user.target\n")
 
 
+def _fragment(state, config):
+    """Accept the existing administrator-owned slice, without adopting new hooks.
+
+    A retained slice may have been made persistent before this boot helper was
+    introduced. Only a minimal definition of the same fixed budget is supported.
+    User-owned definitions, arbitrary directives and extra dependencies fail closed.
+    """
+    path = state.get("FragmentPath")
+    if not path:
+        return
+    q.require(path in {str(Path(root) / config["unit"]) for root in
+                        ("/etc/systemd/user", "/etc/xdg/systemd/user")}, "HOST_RESOURCE_DEFINITION")
+    # Debian/Ubuntu expose the same administrator directory through this
+    # fixed root-owned XDG alias. Do not follow arbitrary user symlinks.
+    alias = Path("/etc/xdg/systemd/user")
+    if Path(path).parent == alias and alias.is_symlink():
+        directory = startup._protected_directory(alias.parent, owner_uid=0)
+        try:
+            info = os.stat("user", dir_fd=directory, follow_symlinks=False)
+            q.require(stat.S_ISLNK(info.st_mode) and info.st_uid == 0
+                      and os.readlink("user", dir_fd=directory) == "../../systemd/user",
+                      "HOST_RESOURCE_DEFINITION")
+            path = str(Path("/etc/systemd/user") / config["unit"])
+        finally:
+            os.close(directory)
+    raw = startup.protected_read(path, owner_uid=0, maximum=16384)
+    parsed = configparser.ConfigParser(interpolation=None, strict=True)
+    parsed.optionxform = str
+    try:
+        parsed.read_string(raw.decode("utf-8"))
+    except (UnicodeError, configparser.Error) as error:
+        raise q.QuotaError("HOST_RESOURCE_DEFINITION") from error
+    q.require(not parsed.defaults() and "Slice" in parsed
+              and set(parsed.sections()) <= {"Unit", "Slice"}
+              and ("Unit" not in parsed or set(parsed["Unit"]) <= {"Description"}),
+              "HOST_RESOURCE_DEFINITION")
+    values = {"MemoryMax": {"256M", "268435456"}, "MemorySwapMax": {"0"},
+              "TasksMax": {"64"}, "CPUQuota": {"100%"}, "CPUQuotaPeriodSec": {"100ms", "100000us"}}
+    q.require(set(parsed["Slice"]) == set(values)
+              and all(parsed["Slice"][key] in choices for key, choices in values.items()),
+              "HOST_RESOURCE_DEFINITION")
+
+
 def _state(bus, config):
     state = bus.unit(config["unit"])
     q.require(state.get("LoadState") == "loaded" and state.get("Job", [None])[0] == 0
               and state.get("ActiveState") in {"active", "inactive"}, "HOST_RESOURCE_BUSY")
     control = f"/run/user/{config['uid']}/systemd/user.control/{config['unit']}.d/"
     allowed = {control + "50-" + key + ".conf" for key in DROPINS}
-    q.require(not state.get("FragmentPath") and set(state.get("DropInPaths", [])) <= allowed
+    _fragment(state, config)
+    q.require(set(state.get("DropInPaths", [])) <= allowed
               and not any(state.get(key) for key in FORBIDDEN), "HOST_RESOURCE_DEFINITION")
-    # Only the implicit root slice / shutdown ordering of a fileless slice.
+    # Only the implicit root slice / shutdown dependencies are supported.
     q.require(set(state.get("Requires", [])) <= {"-.slice"}
               and not state.get("Wants") and set(state.get("Conflicts", [])) <= {"shutdown.target"},
               "HOST_RESOURCE_DEPENDENCIES")

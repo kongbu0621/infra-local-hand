@@ -87,6 +87,65 @@ class HostResourceTests(unittest.TestCase):
             self.prepare()
         self.bus.call.assert_not_called(); self.bus.run_job.assert_not_called()
 
+    def persistent_fragment(self):
+        return (b"[Unit]\nDescription=Retained resource\n\n[Slice]\nMemoryMax=256M\n"
+                b"MemorySwapMax=0\nTasksMax=64\nCPUQuota=100%\nCPUQuotaPeriodSec=100ms\n")
+
+    def test_persistent_resource_readiness_keeps_active_instance_and_limits(self):
+        self.state.update(boot.LIMITS)
+        self.state.update(ActiveState="active", ControlGroup=self.config["parent"])
+        for root in ("/etc/systemd/user", "/etc/xdg/systemd/user"):
+            path = root + "/" + self.config["unit"]
+            self.state["FragmentPath"] = path
+            with patch.object(boot.Path, "is_symlink", return_value=False), \
+                    patch.object(boot.startup, "protected_read", return_value=self.persistent_fragment()) as read:
+                self.assertFalse(self.prepare()["changed"])
+                read.assert_called_once_with(path, owner_uid=0, maximum=16384)
+        self.assertEqual("before", self.state["InvocationID"])
+        self.bus.call.assert_not_called(); self.bus.run_job.assert_not_called()
+
+    def test_xdg_alias_only_accepts_protected_standard_target(self):
+        self.state["FragmentPath"] = "/etc/xdg/systemd/user/fixtureboot.slice"
+        import stat
+        from types import SimpleNamespace
+        with patch.object(boot.Path, "is_symlink", return_value=True), \
+                patch.object(boot.startup, "_protected_directory", side_effect=lambda *a, **k: os.open(self.root, os.O_DIRECTORY)), \
+                patch.object(boot.os, "stat", return_value=SimpleNamespace(st_mode=stat.S_IFLNK | 0o777, st_uid=0)), \
+                patch.object(boot.startup, "protected_read", return_value=self.persistent_fragment()) as read:
+            with patch.object(boot.os, "readlink", return_value="../../systemd/user"):
+                boot._state(self.bus, self.config)
+                read.assert_called_once_with("/etc/systemd/user/fixtureboot.slice", owner_uid=0, maximum=16384)
+            read.reset_mock()
+            with patch.object(boot.os, "readlink", return_value="/unrelated"), self.assertRaises(ValueError):
+                boot._state(self.bus, self.config)
+            read.assert_not_called()
+
+    def test_persistent_closed_resource_with_correct_limits_starts_without_rewrite(self):
+        self.state.update(boot.LIMITS, FragmentPath="/etc/systemd/user/fixtureboot.slice")
+        with patch.object(boot.startup, "protected_read", return_value=self.persistent_fragment()):
+            self.assertTrue(self.prepare()["changed"])
+        self.bus.call.assert_not_called(); self.bus.run_job.assert_called_once()
+
+    def test_persistent_untrusted_or_different_definition_is_not_adopted(self):
+        original = self.persistent_fragment()
+        self.state["FragmentPath"] = "/etc/systemd/user/fixtureboot.slice"
+        for raw in (original.replace(b"TasksMax=64", b"TasksMax=65"),
+                    original.replace(b"[Unit]", b"[Unit]\nWants=other.service"),
+                    original + b"[Service]\nExecStart=/unexpected\n",
+                    original + b"[DEFAULT]\nUnexpected=yes\n",
+                    original + b"TasksMax=64\n", original + b"\xff",
+                    original.replace(b"CPUQuota=100%\n", b"")):
+            with self.subTest(raw=raw), patch.object(boot.startup, "protected_read", return_value=raw):
+                with self.assertRaisesRegex(ValueError, "HOST_RESOURCE_DEFINITION"):
+                    self.prepare()
+        with patch.object(boot.startup, "protected_read", side_effect=ValueError("untrusted")):
+            with self.assertRaisesRegex(ValueError, "untrusted"): self.prepare()
+        self.state["FragmentPath"] = "/home/user/.config/systemd/user/fixtureboot.slice"
+        with patch.object(boot.startup, "protected_read") as read, self.assertRaises(ValueError):
+            self.prepare()
+        read.assert_not_called()
+        self.bus.call.assert_not_called(); self.bus.run_job.assert_not_called()
+
     def test_busy_or_external_definition_rejected_before_changes(self):
         for change in ({"Job": [12, "/job/12"]}, {"ActiveState": "activating"},
                        {"Requires": ["other.service"]}, {"Wants": ["other.service"]},
