@@ -186,6 +186,51 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(claims=claims):
                 self.assertIsNone(await self.issuer.verifier.verify_token(self.issuer.token(claims=claims)))
 
+    async def test_rejection_logs_fixed_reason_without_credentials(self):
+        now = int(time.time())
+        private_value = "private-value-must-not-appear"
+        cases = [
+            ({"iss": private_value}, "issuer"),
+            ({"aud": private_value}, "audience"),
+            ({"exp": now - 10}, "expired"),
+            ({"nbf": now + 500}, "not_yet_valid"),
+            ({"iat": True}, "date_types"),
+            ({"exp": now + 10000}, "token_lifetime"),
+            ({"sub": private_value}, "subject"),
+            ({"client_id": private_value}, "client_id"),
+            ({"scope": "lh:read  lh:submit"}, "scope_format"),
+            ({"scope": private_value}, "business_scope"),
+            ({"nbf": None}, "missing_claim:nbf"),
+        ]
+        for claims, reason in cases:
+            token = self.issuer.token(claims=claims)
+            with self.subTest(reason=reason), self.assertLogs("local_hand_mcp.auth", level="INFO") as logs:
+                self.assertIsNone(await self.issuer.verifier.verify_token(token))
+            self.assertEqual(logs.output, ["INFO:local_hand_mcp.auth:Access token rejected: reason=" + reason])
+            self.assertNotIn(token, "".join(logs.output))
+            self.assertNotIn(private_value, "".join(logs.output))
+
+    async def test_rejection_logs_header_key_and_signature_without_raw_error(self):
+        tokens = [
+            ("opaque-secret", "token_shape"),
+            (self.issuer.token(headers={"typ": "private-header"}), "token_header"),
+            (self.issuer.token(headers={"kid": "private-kid"}), "signing_key"),
+            (self.issuer.token(private=self.issuer.other_private), "signature"),
+        ]
+        for token, reason in tokens:
+            with self.subTest(reason=reason), self.assertLogs("local_hand_mcp.auth", level="INFO") as logs:
+                with self.assertRaises(JobError) as caught:
+                    await self.issuer.verifier.authenticate(token)
+            self.assertEqual(caught.exception.code, "UNAUTHORIZED")
+            self.assertEqual(str(caught.exception), "Access token could not be verified")
+            self.assertEqual(logs.output, ["INFO:local_hand_mcp.auth:Access token rejected: reason=" + reason])
+        with patch("jwt.decode", side_effect=RuntimeError("sensitive-exception-message")):
+            with self.assertLogs("local_hand_mcp.auth", level="INFO") as logs:
+                self.assertIsNone(await self.issuer.verifier.verify_token(self.issuer.token()))
+        self.assertEqual(logs.output, ["INFO:local_hand_mcp.auth:Access token rejected: reason=jwt_validation"])
+        with self.assertNoLogs("local_hand_mcp.auth", level="INFO"):
+            self.assertIsNotNone(await self.issuer.verifier.verify_token(self.issuer.token()))
+
     async def test_forged_signature_unknown_kid_and_attacker_key_urls(self):
         bad = [self.issuer.token(private=self.issuer.other_private)]
         for headers in ({"kid": "not-admitted"}, {"jku": "https://attacker.example/keys"},

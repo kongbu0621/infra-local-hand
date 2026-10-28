@@ -533,19 +533,23 @@ class JWTVerifier:
         import jwt
         from mcp.server.auth.provider import AccessToken
 
-        if not isinstance(token, str) or not 0 < len(token) <= MAX_TOKEN:
-            raise _deny()
-        parts = token.split(".")
-        if len(parts) != 3 or any(not _TOKEN_PART.fullmatch(part) for part in parts):
-            raise _deny()
-        header = self._token_object(parts[0])
-        if (header.get("alg") not in self.config.algorithms
-                or not isinstance(header.get("kid"), str) or not _SCOPE.fullmatch(header["kid"])
-                or header.get("typ", "JWT") not in ("JWT", "at+jwt")
-                or any(name in header for name in ("crit", "jku", "x5u", "jwk", "x5c", "b64"))):
-            raise _deny()
-        key, fingerprint = await self._key(header["kid"], header["alg"])
+        stage = "token_shape"
         try:
+            if not isinstance(token, str) or not 0 < len(token) <= MAX_TOKEN:
+                raise _deny()
+            parts = token.split(".")
+            if len(parts) != 3 or any(not _TOKEN_PART.fullmatch(part) for part in parts):
+                raise _deny()
+            stage = "token_header"
+            header = self._token_object(parts[0])
+            if (header.get("alg") not in self.config.algorithms
+                    or not isinstance(header.get("kid"), str) or not _SCOPE.fullmatch(header["kid"])
+                    or header.get("typ", "JWT") not in ("JWT", "at+jwt")
+                    or any(name in header for name in ("crit", "jku", "x5u", "jwk", "x5c", "b64"))):
+                raise _deny()
+            stage = "signing_key"
+            key, fingerprint = await self._key(header["kid"], header["alg"])
+            stage = "jwt_validation"
             claims = jwt.decode(
                 token, key=key, algorithms=list(self.config.algorithms),
                 audience=self.config.resource, issuer=self.config.issuer,
@@ -555,31 +559,60 @@ class JWTVerifier:
             )
             # PyJWT checks signature before claims; this second strict decoder
             # rejects duplicate claim keys that ordinary JSON decoding loses.
+            stage = "claim_encoding"
             strict_claims = self._token_object(parts[1])
             if claims != strict_claims:
                 raise _deny()
+            stage = "date_types"
             if any(type(claims[field]) is not int for field in ("iat", "nbf", "exp")):
                 raise _deny()
+            stage = "token_lifetime"
             if (claims["exp"] <= claims["iat"] or claims["nbf"] > claims["exp"]
-                    or claims["exp"] - claims["iat"] > self.config.maximum_token_seconds
-                    or claims["client_id"] != self.config.client_id):
+                    or claims["exp"] - claims["iat"] > self.config.maximum_token_seconds):
                 raise _deny()
+            stage = "client_id"
+            if claims["client_id"] != self.config.client_id:
+                raise _deny()
+            stage = "subject"
             subject = claims["sub"]
             if subject not in self.config.subject_map:
                 raise _deny()
+            stage = "scope_format"
             scopes = claims["scope"]
             if not isinstance(scopes, str) or len(scopes) > 4096:
                 raise _deny()
             scope_list = scopes.split(" ")
             if len(scope_list) > 32 or any(not _SCOPE.fullmatch(s) for s in scope_list):
                 raise _deny()
+            stage = "business_scope"
             accepted_scopes = sorted(set(scope_list).intersection(self.config.scopes))
             if not accepted_scopes:
                 raise _deny()
+            stage = "access_token"
             return AccessToken(token=token, client_id=self.config.client_id, scopes=accepted_scopes,
                                expires_at=claims["exp"], resource=self.config.resource, subject=subject,
                                claims={"local_hand_jwks": {"kid": header["kid"], "sha256": fingerprint}})
-        except Exception:
+        except Exception as error:
+            # Closed vocabulary only: never interpolate tokens, claim values,
+            # exception messages or attacker-controlled exception type names.
+            if stage == "jwt_validation":
+                for error_type, reason in (
+                    (jwt.MissingRequiredClaimError, "missing_claim"),
+                    (jwt.InvalidSignatureError, "signature"),
+                    (jwt.ExpiredSignatureError, "expired"),
+                    (jwt.ImmatureSignatureError, "not_yet_valid"),
+                    (jwt.InvalidAudienceError, "audience"),
+                    (jwt.InvalidIssuerError, "issuer"),
+                    (jwt.InvalidIssuedAtError, "issued_at"),
+                ):
+                    if isinstance(error, error_type):
+                        stage = reason
+                        break
+                if stage == "missing_claim" and error.claim in (
+                    "iss", "aud", "sub", "iat", "nbf", "exp", "scope", "client_id"
+                ):
+                    stage += ":" + error.claim
+            _LOG.info("Access token rejected: reason=%s", stage)
             raise _deny() from None
 
     async def verify_token(self, token: str):
