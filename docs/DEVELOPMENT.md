@@ -79,6 +79,23 @@ MCP 已停止且没有待决作业，管理器保持原候选进程。现复用�
 安装态 16 项针对性检查、包校验和编译通过，覆盖真实 socket 故障复现、监听器保护、并发替换、
 中断接续及原调用器保留；现场修复仍待本机交互 sudo，不能报告 MCP 已恢复或网页 401 已解决。
 
+19:24 的接续报告返回 `AUTH_DIAGNOSTICS_ACTIVE_ORIGINAL_RESULTS_VERIFIED`，同一部署操作已
+`COMMITTED`，维护准入恢复 `OPEN`。管理器和 MCP 均使用 `95b3c6c`，实际运行且自动重启次数
+为零；六个原任务及六个证据文件的读回结果与原基线一致。原残留端点已改名保留，业务未重放。
+19:25 再次通过网页插件调用只读 `lh_capabilities`，平台仍返回 `-32603`；对应服务日志明确记录
+`reason=audience` 和 HTTP 401，现已定位到真实令牌的 audience 校验失败。没有读取或记录令牌值。
+
+原客户端的 audience 映射指向资源客户端 ID。现准备将该映射改为现有 MCP 的完整资源地址，
+同时移除优先级更高的客户端 audience 字段，保留严格的单一资源校验。已核对
+[Keycloak 26.8.1 映射实现](https://github.com/keycloak/keycloak/blob/26.8.1/services/src/main/java/org/keycloak/protocol/oidc/mappers/AudienceProtocolMapper.java)及
+[资源参数后处理](https://github.com/keycloak/keycloak/blob/26.8.1/services/src/main/java/org/keycloak/protocol/oidc/resourceindicators/ResourceIndicatorsPostProcessor.java)：
+准确的自定义 audience 也能用于授权码和刷新令牌路径；没有资源参数时仍保留准确地址。
+修复先保存原配置，仅更新原客户端的该映射；回复丢失先读回，重复执行复用已完成修改。
+11 项针对性检查及编译通过，涵盖配置漂移、备份失败、回复丢失、重复调用和真实 JWT 验证器的
+正确地址接受、错误地址及数组 audience 拒绝。未改变权限、验证器或服务配置，也未申请 Owner 令牌。
+本机 sudo 仍要求交互密码，签发映射尚未实际修改；模拟声明检查与网页真实调用验收保持区分，
+修改后仍需新的令牌及一次实际只读调用，不能报告网页接入已完成。
+
 ## 修复版候选安装准备与 Ledger 接续校正（2026-10-27）
 
 按 Owner 授权继续推进，将修复源码 `2c3ad57` 制成独立候选包。所选提交与树、1456 个源码文件、
